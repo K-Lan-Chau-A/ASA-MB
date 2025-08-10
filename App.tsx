@@ -1,28 +1,44 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import LoginScreen from './src/screens/LoginScreen';
+import BottomNavigation from './src/components/BottomNavigation';
+import NotificationScreen from './src/screens/NotificationScreen';
+import ScannerScreen from './src/screens/ScannerScreen';
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
+const Stack = createNativeStackNavigator();
 
 function App() {
-  const isDarkMode = useColorScheme() === 'dark';
-
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <NewAppScreen templateFileName="App.tsx" />
-    </View>
+    <NavigationContainer>
+      <Stack.Navigator 
+        initialRouteName="Login"
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right'
+        }}
+      >
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="MainApp" component={BottomNavigation} />
+        <Stack.Screen 
+          name="Notification" 
+          component={NotificationScreen}
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right'
+          }}
+        />
+        <Stack.Screen 
+          name="Scanner" 
+          component={ScannerScreen}
+          options={{
+            headerShown: false,
+            animation: 'slide_from_bottom'
+          }}
+        />
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-});
 
 export default App;

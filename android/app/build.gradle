@@ -78,6 +78,11 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "com.asa"
+    
+    // Add this for react-native-vector-icons
+    project.ext.vectoricons = [
+        iconFontNames: [ 'MaterialIcons.ttf', 'FontAwesome5_Regular.ttf', 'Ionicons.ttf' ]
+    ]
     defaultConfig {
         applicationId "com.asa"
         minSdkVersion rootProject.ext.minSdkVersion
