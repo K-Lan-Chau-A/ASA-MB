@@ -9,6 +9,8 @@ import com.facebook.react.ReactNativeHost
 import com.facebook.react.ReactPackage
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
+import com.google.firebase.FirebaseApp
+import com.google.firebase.messaging.FirebaseMessaging
 
 class MainApplication : Application(), ReactApplication {
 
@@ -33,6 +35,24 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    try {
+      // Khởi tạo Firebase
+      FirebaseApp.initializeApp(this)
+      
+      // Khởi tạo FCM
+      FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+        if (!task.isSuccessful) {
+          println("Fetching FCM registration token failed: ${task.exception}")
+          return@addOnCompleteListener
+        }
+
+        // Get new FCM registration token
+        val token = task.result
+        println("FCM Token: $token")
+      }
+    } catch (e: Exception) {
+      e.printStackTrace()
+    }
     loadReactNative(this)
   }
 }

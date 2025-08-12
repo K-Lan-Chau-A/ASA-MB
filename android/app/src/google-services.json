@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "993757000462",
+    "project_id": "asianunicorn-34f6e",
+    "storage_bucket": "asianunicorn-34f6e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:993757000462:android:1a54ee71afb658c99d9d5f",
+        "android_client_info": {
+          "package_name": "com.asa"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA1RSILWw9xBXCRsuEcMPd0Mmzah3UbEo4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

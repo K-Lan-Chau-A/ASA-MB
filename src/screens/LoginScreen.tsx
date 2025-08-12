@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useFCMToken } from '../hooks/useFCMToken';
+import { fcmService } from '../services/FCMService';
 import {
   View,
   Text,
@@ -8,6 +10,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
@@ -24,13 +27,68 @@ const LoginScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const { fcmToken, loading } = useFCMToken();
 
-  const handleLogin = () => {
-    // Chuyển đến màn hình chính với bottom navigation
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'MainApp' }],
-    });
+  useEffect(() => {
+    const initFCM = async () => {
+      try {
+        await fcmService.init();
+        const token = await fcmService.getFCMToken();
+        if (token) {
+          console.log('FCM Token initialized:', token);
+        }
+      } catch (error) {
+        console.error('Error initializing FCM:', error);
+      }
+    };
+
+    initFCM();
+  }, []);
+
+  const handleLogin = async () => {
+    try {
+      if (loading) {
+        console.log('Waiting for FCM token...');
+        Alert.alert('Thông báo', 'Đang khởi tạo kết nối với máy chủ...');
+        return;
+      }
+      
+      // Thử lấy token mới nếu chưa có
+      if (!fcmToken) {
+        const newToken = await fcmService.getFCMToken();
+        if (!newToken) {
+          console.error('FCM token not available');
+          Alert.alert('Lỗi', 'Không thể kết nối với máy chủ. Vui lòng thử lại sau.');
+          return;
+        }
+      }
+
+      // Gửi thông tin đăng nhập và FCM token lên server
+      // const response = await fetch('YOUR_API_ENDPOINT', {
+      //   method: 'POST',
+      //   headers: {
+      //     'Content-Type': 'application/json',
+      //   },
+      //   body: JSON.stringify({
+      //     username,
+      //     password,
+      //     fcmToken,
+      //   }),
+      // });
+
+      // if (!response.ok) {
+      //   throw new Error('Login failed');
+      // }
+
+      // Chuyển đến màn hình chính với bottom navigation
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'MainApp' }],
+      });
+    } catch (error) {
+      console.error('Login error:', error);
+      // Hiển thị thông báo lỗi cho người dùng
+    }
   };
 
   return (
