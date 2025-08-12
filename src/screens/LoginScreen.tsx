@@ -8,13 +8,20 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
+
+type RootStackParamList = {
+  Login: undefined;
+  MainApp: undefined;
+  Notification: undefined;
+  Scanner: undefined;
+};
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const LoginScreen = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
@@ -27,7 +34,7 @@ const LoginScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.content}
