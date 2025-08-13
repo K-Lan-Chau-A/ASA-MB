@@ -5,37 +5,42 @@ const FCM_TOKEN_KEY = 'fcm_token';
 
 class FCMService {
   async init() {
-    // Request permission for iOS
-    const authStatus = await messaging().requestPermission();
-    const enabled =
-      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-
-    if (enabled) {
-      await this.getFCMToken();
-    }
-  }
-
-  async getFCMToken() {
+    console.log('🔥 Initializing FCM Service...');
+    
     try {
-      // Kiểm tra quyền thông báo trước khi lấy token
+      // Request permission for iOS
       const authStatus = await messaging().requestPermission({
         provisional: true,
         sound: true,
         badge: true,
         alert: true,
       });
-
+      
+      console.log('🔥 FCM Permission status:', authStatus);
+      
       const enabled =
         authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
         authStatus === messaging.AuthorizationStatus.PROVISIONAL;
 
-      if (!enabled) {
-        console.log('User has not granted notification permission');
-        return null;
-      }
+      console.log('🔥 FCM Enabled:', enabled);
 
-      // Đảm bảo Firebase đã được khởi tạo
+      if (enabled) {
+        const token = await this.getFCMToken();
+        console.log('🔥 FCM Token from init:', token);
+        return token;
+      }
+    } catch (error) {
+      console.error('🔥 FCM init error:', error);
+    }
+    return null;
+  }
+
+  async getFCMToken() {
+    console.log('🔥 Getting FCM Token...');
+    
+    try {
+      // Đăng ký thiết bị cho remote messages
+      console.log('🔥 Registering device for remote messages...');
       await messaging().registerDeviceForRemoteMessages();
       
       // Thử lấy token nhiều lần nếu cần
@@ -44,14 +49,18 @@ class FCMService {
       
       while (!fcmToken && retryCount < 3) {
         try {
+          console.log(`🔥 Attempting to get token (attempt ${retryCount + 1})...`);
           fcmToken = await messaging().getToken();
+          
           if (fcmToken) {
-            console.log('FCM Token:', fcmToken);
+            console.log('🔥 SUCCESS - FCM Token:', fcmToken);
             await this.setStoredFCMToken(fcmToken);
             return fcmToken;
+          } else {
+            console.log('🔥 Token is null, retrying...');
           }
         } catch (error) {
-          console.error(`Failed to get FCM token (attempt ${retryCount + 1}):`, error);
+          console.error(`🔥 Failed to get FCM token (attempt ${retryCount + 1}):`, error);
           retryCount++;
           if (retryCount < 3) {
             // Đợi 1 giây trước khi thử lại
@@ -59,8 +68,12 @@ class FCMService {
           }
         }
       }
+      
+      if (!fcmToken) {
+        console.error('🔥 Failed to get FCM token after 3 attempts');
+      }
     } catch (error) {
-      console.error('Failed to get FCM token:', error);
+      console.error('🔥 Failed to get FCM token:', error);
     }
     return null;
   }
@@ -82,7 +95,7 @@ class FCMService {
     }
   }
 
-  async onTokenRefresh(callback: (token: string) => void) {
+  onTokenRefresh(callback: (token: string) => void) {
     return messaging().onTokenRefresh(async (fcmToken) => {
       await this.setStoredFCMToken(fcmToken);
       callback(fcmToken);
@@ -93,7 +106,7 @@ class FCMService {
     return messaging().onMessage(callback);
   }
 
-  async registerBackgroundMessageHandler(callback: (message: any) => void) {
+  async registerBackgroundMessageHandler(callback: (message: any) => Promise<any>) {
     return messaging().setBackgroundMessageHandler(callback);
   }
 }
