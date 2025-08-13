@@ -8,12 +8,13 @@ import {
   Platform,
 } from 'react-native';
 import { Camera, useCameraDevice, useCodeScanner } from 'react-native-vision-camera';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
+import { RootStackParamList } from '../types/navigation';
 
 const ScannerScreen = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [hasPermission, setHasPermission] = useState<string>('not-determined');
   const [isLoadingDevice, setIsLoadingDevice] = useState(true);
   const [isScanning, setIsScanning] = useState(true);
@@ -106,11 +107,11 @@ const ScannerScreen = () => {
           }
         },
         { 
-          text: 'Sao chép', 
+          text: 'Thêm vào đơn', 
           onPress: () => {
-            console.log('📱 Copied code:', code);
-            // Có thể thêm Clipboard.setString(code) nếu cần
-            setIsScanning(true);
+            console.log('📱 Adding product to order:', code);
+            // Navigate to Order screen with the scanned product
+            navigation.navigate('Order', { scannedProduct: { barcode: code, type: codeType } });
           }
         },
         { 

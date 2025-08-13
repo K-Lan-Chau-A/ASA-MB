@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useFCMToken } from '../hooks/useFCMToken';
-import { fcmService } from '../services/FCMService';
+// import { useFCMToken } from '../hooks/useFCMToken';
+// import { fcmService } from '../services/FCMService';
 import {
   View,
   Text,
@@ -14,63 +14,58 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
-
-type RootStackParamList = {
-  Login: undefined;
-  MainApp: undefined;
-  Notification: undefined;
-  Scanner: undefined;
-};
+import { RootStackParamList } from '../types/navigation';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const LoginScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const { fcmToken, loading } = useFCMToken();
+  // const { fcmToken, loading } = useFCMToken();
 
-  useEffect(() => {
-    const initFCM = async () => {
-      try {
-        await fcmService.init();
-        const token = await fcmService.getFCMToken();
-        if (token) {
-          console.log('FCM Token initialized:', token);
-        }
-      } catch (error) {
-        console.error('Error initializing FCM:', error);
-      }
-    };
+  // useEffect(() => {
+  //   const initFCM = async () => {
+  //     try {
+  //       await fcmService.init();
+  //       const token = await fcmService.getFCMToken();
+  //       if (token) {
+  //         console.log('FCM Token initialized:', token);
+  //       }
+  //     } catch (error) {
+  //       console.error('Error initializing FCM:', error);
+  //     }
+  //   };
 
-    initFCM();
-  }, []);
+  //   initFCM();
+  // }, []);
 
   const handleLogin = async () => {
     console.log('🚀 Login button pressed');
-    console.log('🚀 Current fcmToken:', fcmToken);
-    console.log('🚀 Loading state:', loading);
+    // console.log('🚀 Current fcmToken:', fcmToken);
+    // console.log('🚀 Loading state:', loading);
     
     try {
-      if (loading) {
-        console.log('🚀 Waiting for FCM token...');
-        Alert.alert('Thông báo', 'Đang khởi tạo kết nối với máy chủ...');
-        return;
-      }
+      // Temporarily commented out FCM-related code
+      // if (loading) {
+      //   console.log('🚀 Waiting for FCM token...');
+      //   Alert.alert('Thông báo', 'Đang khởi tạo kết nối với máy chủ...');
+      //   return;
+      // }
       
-      // Thử lấy token mới nếu chưa có
-      if (!fcmToken) {
-        console.log('🚀 No FCM token available, trying to get new one...');
-        const newToken = await fcmService.getFCMToken();
-        console.log('🚀 New token from service:', newToken);
-        
-        if (!newToken) {
-          console.error('🚀 FCM token not available');
-          Alert.alert('Lỗi', 'Không thể kết nối với máy chủ. Vui lòng thử lại sau.');
-          return;
-        }
-      }
+      // // Thử lấy token mới nếu chưa có
+      // if (!fcmToken) {
+      //   console.log('🚀 No FCM token available, trying to get new one...');
+      //   const newToken = await fcmService.getFCMToken();
+      //   console.log('🚀 New token from service:', newToken);
+      //   
+      //   if (!newToken) {
+      //     console.error('🚀 FCM token not available');
+      //     Alert.alert('Lỗi', 'Không thể kết nối với máy chủ. Vui lòng thử lại sau.');
+      //     return;
+      //   }
+      // }
 
-      console.log('🚀 Final FCM token for login:', fcmToken);
+      // console.log('🚀 Final FCM token for login:', fcmToken);
 
       // Gửi thông tin đăng nhập và FCM token lên server
       // const response = await fetch('YOUR_API_ENDPOINT', {

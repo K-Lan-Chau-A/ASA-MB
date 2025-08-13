@@ -8,6 +8,7 @@ import LoginScreen from './src/screens/LoginScreen';
 import BottomNavigation from './src/components/BottomNavigation';
 import NotificationScreen from './src/screens/NotificationScreen';
 import ScannerScreen from './src/screens/ScannerScreen';
+import OrderScreen from './src/screens/OrderScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -71,6 +72,14 @@ function App() {
           options={{
             headerShown: false,
             animation: 'slide_from_bottom'
+          }}
+        />
+        <Stack.Screen 
+          name="Order" 
+          component={OrderScreen}
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right'
           }}
         />
       </Stack.Navigator>
