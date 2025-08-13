@@ -3,7 +3,12 @@ export type RootStackParamList = {
   MainApp: undefined;
   Notification: undefined;
   Scanner: undefined;
-  Order: { scannedProduct?: { barcode: string; type?: string } } | undefined;
+  Order: { 
+    scannedProduct?: { barcode: string; type?: string };
+    newProduct?: { id: string; name: string; price: number; barcode: string };
+    scanTimestamp?: number;
+  } | undefined;
+  AddProduct: { barcode?: string } | undefined;
 };
 
 export type TabParamList = {

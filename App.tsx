@@ -9,6 +9,7 @@ import BottomNavigation from './src/components/BottomNavigation';
 import NotificationScreen from './src/screens/NotificationScreen';
 import ScannerScreen from './src/screens/ScannerScreen';
 import OrderScreen from './src/screens/OrderScreen';
+import AddProductScreen from './src/screens/AddProductScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -77,6 +78,14 @@ function App() {
         <Stack.Screen 
           name="Order" 
           component={OrderScreen}
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right'
+          }}
+        />
+        <Stack.Screen 
+          name="AddProduct" 
+          component={AddProductScreen}
           options={{
             headerShown: false,
             animation: 'slide_from_right'

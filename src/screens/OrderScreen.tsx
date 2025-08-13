@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   Alert,
   TouchableWithoutFeedback,
 } from 'react-native';
-import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, NavigationProp, RouteProp, useFocusEffect } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
 
@@ -33,30 +33,156 @@ const availableProducts = [
   { id: '6', name: 'Trà sữa trân châu', price: 35000, barcode: '6789012345678' },
   { id: '7', name: 'Bánh bao nhân thịt', price: 12000, barcode: '7890123456789' },
   { id: '8', name: 'Nước cam ép', price: 22000, barcode: '8901234567890' },
+  { id: '9', name: 'Nabati', price: 8000, barcode: '8993175535878' },
 ];
+
+// Memoized ProductItem component for better performance
+const ProductItem = memo(({ item, onUpdateQuantity }: { 
+  item: Product; 
+  onUpdateQuantity: (id: string, change: number) => void;
+}) => (
+  <View style={styles.productItem}>
+    <View style={styles.productImage} />
+    <View style={styles.productInfo}>
+      <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+      <Text style={styles.productPrice}>{item.price.toLocaleString('vi-VN')}đ</Text>
+    </View>
+    <View style={styles.quantityControls}>
+      <TouchableOpacity
+        style={styles.quantityButton}
+        onPress={() => onUpdateQuantity(item.id, -1)}
+      >
+        <Text style={styles.quantityButtonText}>−</Text>
+      </TouchableOpacity>
+      <Text style={styles.quantity}>{item.quantity}</Text>
+      <TouchableOpacity
+        style={styles.quantityButton}
+        onPress={() => onUpdateQuantity(item.id, 1)}
+      >
+        <Text style={styles.quantityButtonText}>+</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+));
+
+// Memoized AvailableProductItem component
+const AvailableProductItem = memo(({ 
+  item, 
+  currentQuantity, 
+  onAddProduct, 
+  onUpdateQuantity 
+}: {
+  item: Omit<Product, 'quantity'>;
+  currentQuantity: number;
+  onAddProduct: (product: Omit<Product, 'quantity'>) => void;
+  onUpdateQuantity: (id: string, change: number) => void;
+}) => (
+  <View style={[
+    styles.availableProductItem,
+    currentQuantity > 0 && styles.availableProductItemInCart
+  ]}>
+    <View style={styles.productImage} />
+    <View style={styles.productInfo}>
+      <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+      <Text style={styles.productPrice}>{item.price.toLocaleString('vi-VN')}đ</Text>
+      {currentQuantity > 0 && (
+        <Text style={styles.inCartIndicator}>Đã có trong giỏ hàng</Text>
+      )}
+    </View>
+    
+    {currentQuantity > 0 ? (
+      // Show quantity controls if already in cart
+      <View style={styles.quantityControls}>
+        <TouchableOpacity
+          style={styles.quantityButton}
+          onPress={() => onUpdateQuantity(item.id, -1)}
+        >
+          <Text style={styles.quantityButtonText}>−</Text>
+        </TouchableOpacity>
+        <Text style={styles.quantity}>{currentQuantity}</Text>
+        <TouchableOpacity
+          style={styles.quantityButton}
+          onPress={() => onUpdateQuantity(item.id, 1)}
+        >
+          <Text style={styles.quantityButtonText}>+</Text>
+        </TouchableOpacity>
+      </View>
+    ) : (
+      // Show add button if not in cart yet
+      <TouchableOpacity
+        style={styles.addToCartButton}
+        onPress={() => onAddProduct(item)}
+      >
+        <Icon name="plus" size={16} color="#009DA5" />
+        <Text style={styles.addToCartText}>Thêm</Text>
+      </TouchableOpacity>
+    )}
+  </View>
+));
+
+// Global state to persist products across navigations
+let persistedProducts: Product[] = [];
 
 const OrderScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'Order'>>();
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<Product[]>(persistedProducts);
   const [searchText, setSearchText] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
 
-  const addProduct = (product: Omit<Product, 'quantity'>) => {
-    const existingIndex = products.findIndex(p => p.id === product.id);
-    
-    if (existingIndex >= 0) {
-      // Increase quantity if product already exists
-      const updatedProducts = [...products];
-      updatedProducts[existingIndex].quantity += 1;
-      setProducts(updatedProducts);
-    } else {
-      // Add new product
-      setProducts([...products, { ...product, quantity: 1 }]);
-    }
+  // Save products to global state whenever it changes
+  useEffect(() => {
+    persistedProducts = products;
+    console.log('📱 Saved products to global state:', products.length);
+  }, [products]);
+
+  // Restore state when screen gains focus (coming back from other screens)
+  useFocusEffect(
+    useCallback(() => {
+      console.log('📱 OrderScreen focused');
+      console.log('📱 Current products in state:', products.length);
+      console.log('📱 Persisted products:', persistedProducts.length);
+      
+      // Always restore from persisted state when focusing
+      // This ensures state is maintained when coming back from Scanner or AddProduct
+      if (persistedProducts.length > 0 || products.length !== persistedProducts.length) {
+        console.log('📱 Restoring products from global state');
+        setProducts([...persistedProducts]);
+      }
+    }, [])
+  );
+
+  // Function to completely clear order state
+  const clearOrderState = useCallback(() => {
+    console.log('📱 Clearing order state completely');
+    setProducts([]);
+    persistedProducts = [];
+  }, []);
+
+  const addProduct = useCallback((product: Omit<Product, 'quantity'>) => {
+    console.log('📱 Adding product:', product.name);
+    setProducts(prevProducts => {
+      const existingIndex = prevProducts.findIndex(p => p.id === product.id);
+      
+      if (existingIndex >= 0) {
+        // Increase quantity if product already exists
+        const updatedProducts = [...prevProducts];
+        updatedProducts[existingIndex] = {
+          ...updatedProducts[existingIndex],
+          quantity: updatedProducts[existingIndex].quantity + 1
+        };
+        console.log('📱 Updated quantity for:', product.name);
+        return updatedProducts;
+      } else {
+        // Add new product
+        const newProducts = [...prevProducts, { ...product, quantity: 1 }];
+        console.log('📱 Added new product, total products:', newProducts.length);
+        return newProducts;
+      }
+    });
     // Don't clear search or hide dropdown, so user can continue adding products
-  };
+  }, []);
 
   // Handle scanned product from route params
   useEffect(() => {
@@ -66,63 +192,83 @@ const OrderScreen = () => {
       const foundProduct = availableProducts.find(p => p.barcode === barcode);
       if (foundProduct) {
         addProduct(foundProduct);
-        Alert.alert('Thành công', `Đã thêm sản phẩm: ${foundProduct.name}`);
       } else {
-        Alert.alert('Không tìm thấy', `Không tìm thấy sản phẩm với mã: ${barcode}`);
+        // Product not found, automatically navigate to create new product
+        console.log('📱 Product not found, navigating to AddProduct screen:', barcode);
+        navigation.navigate('AddProduct', { barcode });
       }
+      
+      // Clear the scannedProduct and scanTimestamp params to prevent re-processing
+      navigation.setParams({ scannedProduct: undefined, scanTimestamp: undefined });
     }
-  }, [route.params?.scannedProduct]);
+  }, [route.params?.scannedProduct, addProduct, navigation]);
 
-  const updateQuantity = (id: string, change: number) => {
-    setProducts(products.map(product => {
-      if (product.id === id) {
-        const newQuantity = product.quantity + change;
-        return newQuantity > 0 ? { ...product, quantity: newQuantity } : null;
-      }
-      return product;
-    }).filter(Boolean) as Product[]);
-  };
+  // Handle new product from AddProductScreen
+  useEffect(() => {
+    if (route.params?.newProduct) {
+      const newProduct = route.params.newProduct;
+      addProduct(newProduct);
+      console.log('📱 Added new product from AddProductScreen:', newProduct.name);
+      
+      // Clear the newProduct param to prevent re-adding on re-render
+      navigation.setParams({ newProduct: undefined });
+    }
+  }, [route.params?.newProduct, addProduct, navigation]);
 
-  const getTotalAmount = () => {
+  const updateQuantity = useCallback((id: string, change: number) => {
+    setProducts(prevProducts => 
+      prevProducts.map(product => {
+        if (product.id === id) {
+          const newQuantity = product.quantity + change;
+          return newQuantity > 0 ? { ...product, quantity: newQuantity } : null;
+        }
+        return product;
+      }).filter(Boolean) as Product[]
+    );
+  }, []);
+
+  const getTotalAmount = useCallback(() => {
     return products.reduce((total, product) => total + (product.price * product.quantity), 0);
-  };
+  }, [products]);
 
-  const handleScanBarcode = () => {
+  const totalAmount = useMemo(() => getTotalAmount(), [getTotalAmount]);
+
+  const handleScanBarcode = useCallback(() => {
     navigation.navigate('Scanner');
-  };
+  }, [navigation]);
 
-  const handleSearchChange = (text: string) => {
+  const handleSearchChange = useCallback((text: string) => {
     setSearchText(text);
     // Show dropdown when there's text, hide when empty
     setShowDropdown(text.trim().length > 0);
-  };
+  }, []);
 
-  const handleSearchFocus = () => {
+  const handleSearchFocus = useCallback(() => {
     // Show dropdown if there's already text when focus
     if (searchText.trim().length > 0) {
       setShowDropdown(true);
     }
-  };
+  }, [searchText]);
 
-  const handleSearchBlur = () => {
+  const handleSearchBlur = useCallback(() => {
     // Don't hide dropdown on blur - only hide on tap outside
-  };
+  }, []);
 
-  const handleTapOutside = () => {
+  const handleTapOutside = useCallback(() => {
     // Close dropdown and blur search input
     setShowDropdown(false);
     if (searchInputRef.current) {
       searchInputRef.current.blur();
     }
-  };
+  }, []);
 
-  const clearSearch = () => {
+  const clearSearch = useCallback(() => {
     setSearchText('');
     setShowDropdown(false);
     if (searchInputRef.current) {
       searchInputRef.current.blur();
     }
-  };
+  }, []);
 
   // Show dropdown based on showDropdown state and has text
   const showAvailableProducts = showDropdown && searchText.trim().length > 0;
@@ -136,8 +282,8 @@ const OrderScreen = () => {
         { 
           text: 'Có', 
           onPress: () => {
-            setProducts([]);
-            navigation.goBack();
+            clearOrderState(); // Use dedicated clear function
+            navigation.navigate('MainApp');
           }
         },
       ]
@@ -152,15 +298,15 @@ const OrderScreen = () => {
     
     Alert.alert(
       'Thanh toán',
-      `Tổng cộng: ${getTotalAmount().toLocaleString('vi-VN')}đ\n\nXác nhận thanh toán?`,
+      `Tổng cộng: ${totalAmount.toLocaleString('vi-VN')}đ\n\nXác nhận thanh toán?`,
       [
         { text: 'Hủy', style: 'cancel' },
         { 
           text: 'Thanh toán', 
           onPress: () => {
             Alert.alert('Thành công', 'Thanh toán thành công!');
-            setProducts([]);
-            navigation.goBack();
+            clearOrderState(); // Use dedicated clear function
+            navigation.navigate('MainApp');
           }
         },
       ]
@@ -172,11 +318,10 @@ const OrderScreen = () => {
       return [];
     }
 
-    const filtered = availableProducts.filter(product => {
-      const productName = product.name.toLowerCase();
-      const searchTerm = searchText.toLowerCase().trim();
-      return productName.includes(searchTerm);
-    });
+    const searchTerm = searchText.toLowerCase().trim();
+    const filtered = availableProducts.filter(product => 
+      product.name.toLowerCase().includes(searchTerm)
+    );
 
     // Limit results to prevent too many items when searching single characters
     return filtered.slice(0, 10); // Maximum 10 results
@@ -187,37 +332,53 @@ const OrderScreen = () => {
       return 0;
     }
 
-    return availableProducts.filter(product => {
-      const productName = product.name.toLowerCase();
-      const searchTerm = searchText.toLowerCase().trim();
-      return productName.includes(searchTerm);
-    }).length;
+    const searchTerm = searchText.toLowerCase().trim();
+    return availableProducts.filter(product => 
+      product.name.toLowerCase().includes(searchTerm)
+    ).length;
   }, [searchText]);
 
-  const renderProduct = ({ item }: { item: Product }) => (
-    <View style={styles.productItem}>
-      <View style={styles.productImage} />
-      <View style={styles.productInfo}>
-        <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
-        <Text style={styles.productPrice}>{item.price.toLocaleString('vi-VN')}đ</Text>
-      </View>
-      <View style={styles.quantityControls}>
-        <TouchableOpacity
-          style={styles.quantityButton}
-          onPress={() => updateQuantity(item.id, -1)}
-        >
-          <Text style={styles.quantityButtonText}>−</Text>
-        </TouchableOpacity>
-        <Text style={styles.quantity}>{item.quantity}</Text>
-        <TouchableOpacity
-          style={styles.quantityButton}
-          onPress={() => updateQuantity(item.id, 1)}
-        >
-          <Text style={styles.quantityButtonText}>+</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+  const renderProduct = useCallback(({ item }: { item: Product }) => (
+    <ProductItem item={item} onUpdateQuantity={updateQuantity} />
+  ), [updateQuantity]);
+
+  const getItemLayout = useCallback((data: any, index: number) => ({
+    length: 82, // Height of productItem (66px + 16px margin)
+    offset: 82 * index,
+    index,
+  }), []);
+
+  const getAvailableItemLayout = useCallback((data: any, index: number) => ({
+    length: 68, // Height of availableProductItem (60px + 8px margin)
+    offset: 68 * index,
+    index,
+  }), []);
+
+  // Key extractor functions
+  const keyExtractor = useCallback((item: Product | any) => item.id, []);
+
+  // Memoized product quantities map for better performance
+  const productQuantities = useMemo(() => {
+    const map = new Map<string, number>();
+    products.forEach(product => {
+      map.set(product.id, product.quantity);
+    });
+    return map;
+  }, [products]);
+
+  // Render function for available products
+  const renderAvailableProduct = useCallback(({ item }: { item: any }) => {
+    const currentQuantity = productQuantities.get(item.id) || 0;
+    
+    return (
+      <AvailableProductItem
+        item={item}
+        currentQuantity={currentQuantity}
+        onAddProduct={addProduct}
+        onUpdateQuantity={updateQuantity}
+      />
+    );
+  }, [productQuantities, addProduct, updateQuantity]);
 
 
 
@@ -283,59 +444,20 @@ const OrderScreen = () => {
           {filteredProducts.length > 0 ? (
             <FlatList
               data={filteredProducts}
-              keyExtractor={(item) => item.id}
+              keyExtractor={keyExtractor}
               showsVerticalScrollIndicator={true}
               style={styles.availableProductsList}
               nestedScrollEnabled={true}
-              renderItem={({ item }) => {
-                // Check if this product is already in the cart
-                const existingProduct = products.find(p => p.id === item.id);
-                const currentQuantity = existingProduct ? existingProduct.quantity : 0;
-
-                return (
-                  <View style={[
-                    styles.availableProductItem,
-                    currentQuantity > 0 && styles.availableProductItemInCart
-                  ]}>
-                    <View style={styles.productImage} />
-                    <View style={styles.productInfo}>
-                      <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
-                      <Text style={styles.productPrice}>{item.price.toLocaleString('vi-VN')}đ</Text>
-                      {currentQuantity > 0 && (
-                        <Text style={styles.inCartIndicator}>Đã có trong giỏ hàng</Text>
-                      )}
-                    </View>
-                    
-                    {currentQuantity > 0 ? (
-                      // Show quantity controls if already in cart
-                      <View style={styles.quantityControls}>
-                        <TouchableOpacity
-                          style={styles.quantityButton}
-                          onPress={() => updateQuantity(item.id, -1)}
-                        >
-                          <Text style={styles.quantityButtonText}>−</Text>
-                        </TouchableOpacity>
-                        <Text style={styles.quantity}>{currentQuantity}</Text>
-                        <TouchableOpacity
-                          style={styles.quantityButton}
-                          onPress={() => updateQuantity(item.id, 1)}
-                        >
-                          <Text style={styles.quantityButtonText}>+</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      // Show add button if not in cart yet
-                      <TouchableOpacity
-                        style={styles.addToCartButton}
-                        onPress={() => addProduct(item)}
-                      >
-                        <Icon name="plus" size={16} color="#009DA5" />
-                        <Text style={styles.addToCartText}>Thêm</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                );
-              }}
+              renderItem={renderAvailableProduct}
+              getItemLayout={getAvailableItemLayout}
+              removeClippedSubviews={true}
+              maxToRenderPerBatch={10}
+              updateCellsBatchingPeriod={50}
+              initialNumToRender={8}
+              windowSize={10}
+              keyboardShouldPersistTaps="handled"
+              decelerationRate={0.98}
+              scrollEventThrottle={16}
             />
           ) : (
             <View style={styles.noResultsContainer}>
@@ -358,8 +480,17 @@ const OrderScreen = () => {
           <FlatList
             data={products}
             renderItem={renderProduct}
-            keyExtractor={(item) => item.id}
+            keyExtractor={keyExtractor}
             showsVerticalScrollIndicator={false}
+            getItemLayout={getItemLayout}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            updateCellsBatchingPeriod={50}
+            initialNumToRender={10}
+            windowSize={10}
+            keyboardShouldPersistTaps="handled"
+            decelerationRate={0.98}
+            scrollEventThrottle={16}
           />
         )}
       </View>
@@ -368,7 +499,7 @@ const OrderScreen = () => {
       <View style={styles.footer}>
         <View style={styles.totalSection}>
           <Text style={styles.totalLabel}>Tổng cộng:</Text>
-          <Text style={styles.totalAmount}>{getTotalAmount().toLocaleString('vi-VN')}đ</Text>
+          <Text style={styles.totalAmount}>{totalAmount.toLocaleString('vi-VN')}đ</Text>
         </View>
         <View style={styles.actionButtons}>
           <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
@@ -454,6 +585,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 8,
     borderRadius: 8,
+    minHeight: 82, // Fixed height for better performance
   },
   productImage: {
     width: 50,
@@ -573,6 +705,7 @@ const styles = StyleSheet.create({
   availableProductsList: {
     maxHeight: 300,
     flex: 0,
+    flexGrow: 0,
   },
   availableProductItem: {
     flexDirection: 'row',
@@ -583,7 +716,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E5E5E5',
-    minHeight: 60,
+    minHeight: 68, // Fixed height for better performance
   },
   availableProductsSection: {
     backgroundColor: '#FFFFFF',

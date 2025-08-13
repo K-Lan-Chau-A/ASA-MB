@@ -77,49 +77,15 @@ const ScannerScreen = () => {
   const handleBarCodeScanned = useCallback((code: string, codeType?: string) => {
     console.log('📱 Barcode scanned:', code, 'Type:', codeType);
     
-    // Xác định loại mã dựa trên type
-    const getCodeTypeDisplay = (type: string) => {
-      switch (type) {
-        case 'qr': return '🔲 QR Code';
-        case 'ean-13': return '📊 EAN-13';
-        case 'ean-8': return '📊 EAN-8';
-        case 'code-128': return '📋 Code-128';
-        case 'code-39': return '📋 Code-39';
-        case 'code-93': return '📋 Code-93';
-        case 'upc-a': return '🏷️ UPC-A';
-        case 'upc-e': return '🏷️ UPC-E';
-        case 'codabar': return '📝 Codabar';
-        default: return '📱 Barcode';
-      }
-    };
-
-    const codeTypeDisplay = codeType ? getCodeTypeDisplay(codeType) : '📱 Barcode';
+    // Go back to OrderScreen với mã đã quét
+    console.log('📱 Automatically adding product to order:', code);
     
-    Alert.alert(
-      'Kết quả quét mã',
-      `${codeTypeDisplay}\n\nMã: ${code}\n\nLoại: ${codeType || 'Unknown'}`,
-      [
-        { 
-          text: 'Quét lại', 
-          style: 'cancel',
-          onPress: () => {
-            setIsScanning(true);
-          }
-        },
-        { 
-          text: 'Thêm vào đơn', 
-          onPress: () => {
-            console.log('📱 Adding product to order:', code);
-            // Navigate to Order screen with the scanned product
-            navigation.navigate('Order', { scannedProduct: { barcode: code, type: codeType } });
-          }
-        },
-        { 
-          text: 'Đóng', 
-          onPress: () => navigation.goBack() 
-        },
-      ]
-    );
+    // Sử dụng navigate với merge: true để preserve existing params
+    navigation.navigate('Order', { 
+      scannedProduct: { barcode: code, type: codeType },
+      // Thêm timestamp để đảm bảo useEffect trigger
+      scanTimestamp: Date.now()
+    });
   }, [navigation]);
 
   const EmulatorTestScreen = () => (
@@ -132,15 +98,21 @@ const ScannerScreen = () => {
         <View style={styles.testButtons}>
           <TouchableOpacity
             style={styles.testButton}
-            onPress={() => handleBarCodeScanned('TEST_QR_CODE_1', 'qr')}
+            onPress={() => handleBarCodeScanned('1234567890123', 'ean-13')}
           >
-            <Text style={styles.testButtonText}>Test QR Code #1</Text>
+            <Text style={styles.testButtonText}>Test Coca Cola (Có sẵn)</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.testButton}
-            onPress={() => handleBarCodeScanned('TEST_QR_CODE_2', 'ean-13')}
+            onPress={() => handleBarCodeScanned('9999999999999', 'ean-13')}
           >
-            <Text style={styles.testButtonText}>Test QR Code #2</Text>
+            <Text style={styles.testButtonText}>Test Sản phẩm mới (Chưa có)</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.testButton}
+            onPress={() => handleBarCodeScanned('8993175535878', 'ean-13')}
+          >
+            <Text style={styles.testButtonText}>Test Nabati (Có sẵn)</Text>
           </TouchableOpacity>
         </View>
       </View>
