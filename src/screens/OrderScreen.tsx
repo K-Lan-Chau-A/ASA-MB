@@ -10,6 +10,7 @@ import {
   Modal,
   Alert,
   TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { useNavigation, useRoute, NavigationProp, RouteProp, useFocusEffect } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -27,7 +28,7 @@ interface Product {
 const availableProducts = [
   { id: '1', name: 'Coca Cola', price: 15000, barcode: '1234567890123' },
   { id: '2', name: 'Pepsi Cola', price: 14000, barcode: '2345678901234' },
-  { id: '3', name: 'Nước suối Aquafina', price: 8000, barcode: '3456789012345' },
+  { id: '3', name: 'Nước suối Aquafina', price: 8000, barcode: '8934588063053' },
   { id: '4', name: 'Bánh mì thịt nướng', price: 25000, barcode: '4567890123456' },
   { id: '5', name: 'Cà phê đen', price: 18000, barcode: '5678901234567' },
   { id: '6', name: 'Trà sữa trân châu', price: 35000, barcode: '6789012345678' },
@@ -129,13 +130,38 @@ const OrderScreen = () => {
   const [products, setProducts] = useState<Product[]>(persistedProducts);
   const [searchText, setSearchText] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
+  const flatListRef = useRef<FlatList>(null);
 
   // Save products to global state whenever it changes
   useEffect(() => {
     persistedProducts = products;
     console.log('📱 Saved products to global state:', products.length);
   }, [products]);
+
+  // Keyboard listeners for better scroll performance
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
+      setIsKeyboardVisible(true);
+    });
+    
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      setIsKeyboardVisible(false);
+      // Slight delay to allow layout to settle before improving scroll performance
+      setTimeout(() => {
+        if (flatListRef.current && showDropdown) {
+          // Force a layout pass to improve scroll performance
+          flatListRef.current.scrollToOffset({ offset: 0, animated: false });
+        }
+      }, 50);
+    });
+
+    return () => {
+      keyboardDidShowListener?.remove();
+      keyboardDidHideListener?.remove();
+    };
+  }, [showDropdown]);
 
   // Restore state when screen gains focus (coming back from other screens)
   useFocusEffect(
@@ -443,6 +469,7 @@ const OrderScreen = () => {
 
           {filteredProducts.length > 0 ? (
             <FlatList
+              ref={flatListRef}
               data={filteredProducts}
               keyExtractor={keyExtractor}
               showsVerticalScrollIndicator={true}
@@ -451,13 +478,25 @@ const OrderScreen = () => {
               renderItem={renderAvailableProduct}
               getItemLayout={getAvailableItemLayout}
               removeClippedSubviews={true}
-              maxToRenderPerBatch={10}
-              updateCellsBatchingPeriod={50}
-              initialNumToRender={8}
-              windowSize={10}
+              maxToRenderPerBatch={isKeyboardVisible ? 10 : 15}
+              updateCellsBatchingPeriod={isKeyboardVisible ? 50 : 16}
+              initialNumToRender={isKeyboardVisible ? 8 : 10}
+              windowSize={isKeyboardVisible ? 10 : 15}
               keyboardShouldPersistTaps="handled"
-              decelerationRate={0.98}
-              scrollEventThrottle={16}
+              decelerationRate={0.995}
+              scrollEventThrottle={isKeyboardVisible ? 16 : 1}
+              maintainVisibleContentPosition={{
+                minIndexForVisible: 0,
+                autoscrollToTopThreshold: 10,
+              }}
+              disableIntervalMomentum={false}
+              bounces={true}
+              bouncesZoom={false}
+              alwaysBounceVertical={true}
+              overScrollMode="auto"
+              scrollIndicatorInsets={{right: 1}}
+              automaticallyAdjustContentInsets={false}
+              contentInsetAdjustmentBehavior="never"
             />
           ) : (
             <View style={styles.noResultsContainer}>
