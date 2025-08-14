@@ -3,6 +3,7 @@ export type RootStackParamList = {
   MainApp: undefined;
   Notification: undefined;
   Scanner: undefined;
+  ChatbotScreen: undefined;
   Order: { 
     scannedProduct?: { barcode: string; type?: string };
     newProduct?: { id: string; name: string; price: number; barcode: string };

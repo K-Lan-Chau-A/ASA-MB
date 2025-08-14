@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,6 +6,7 @@ import {
   View,
   Alert,
   Platform,
+  Animated,
 } from 'react-native';
 import { Camera, useCameraDevice, useCodeScanner } from 'react-native-vision-camera';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
@@ -19,8 +20,34 @@ const ScannerScreen = () => {
   const [isLoadingDevice, setIsLoadingDevice] = useState(true);
   const [isScanning, setIsScanning] = useState(true);
   
+  // Animation cho scan line
+  const scanLineAnim = useRef(new Animated.Value(0)).current;
+  
   // Sử dụng useCameraDevice thay vì useCameraDevices
   const device = useCameraDevice('back');
+
+  // Animation functions
+  const startScanLineAnimation = useCallback(() => {
+    scanLineAnim.setValue(0);
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scanLineAnim, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(scanLineAnim, {
+          toValue: 0,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+      ])
+    ).start();
+  }, [scanLineAnim]);
+
+  const stopScanLineAnimation = useCallback(() => {
+    scanLineAnim.stopAnimation();
+  }, [scanLineAnim]);
 
   // Code scanner để quét barcode/QR code
   const codeScanner = useCodeScanner({
@@ -50,6 +77,15 @@ const ScannerScreen = () => {
       setIsLoadingDevice(false);
     }
   }, [device]);
+
+  // Animation cho scan line
+  useEffect(() => {
+    if (isScanning) {
+      startScanLineAnimation();
+    } else {
+      stopScanLineAnimation();
+    }
+  }, [isScanning, startScanLineAnimation, stopScanLineAnimation]);
 
   const checkCameraPermission = async () => {
     try {
@@ -181,10 +217,24 @@ const ScannerScreen = () => {
       />
       <View style={styles.overlay}>
         <View style={styles.scanArea}>
+          {/* Corner indicators */}
+          <View style={styles.cornerTopLeft} />
+          <View style={styles.cornerTopRight} />
+          <View style={styles.cornerBottomLeft} />
+          <View style={styles.cornerBottomRight} />
+          
           {isScanning && (
-            <View style={styles.scanningIndicator}>
-              <Text style={styles.scanningText}>📱 Đang quét...</Text>
-            </View>
+            <Animated.View 
+              style={[
+                styles.scanLine,
+                {
+                  top: scanLineAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0%', '100%'],
+                  })
+                }
+              ]} 
+            />
           )}
         </View>
       </View>
@@ -196,13 +246,15 @@ const ScannerScreen = () => {
       </TouchableOpacity>
       <View style={styles.bottomContent}>
         <Text style={styles.instructions}>
-          Đặt mã vạch hoặc QR code vào trong khung để quét
-          {'\n'}Hỗ trợ: QR, EAN-13/8, Code-128/39/93, UPC-A/E, Codabar
+          Căn chỉnh mã vạch vào giữa khung quét
         </Text>
         {!isScanning && (
           <TouchableOpacity
             style={styles.rescanButton}
-            onPress={() => setIsScanning(true)}
+            onPress={() => {
+              setIsScanning(true);
+              startScanLineAnimation();
+            }}
           >
             <Text style={styles.rescanButtonText}>Quét lại</Text>
           </TouchableOpacity>
@@ -227,11 +279,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   scanArea: {
-    width: 250,
-    height: 250,
-    borderWidth: 2,
-    borderColor: '#009DA5',
+    width: 300,
+    height: 150,
     backgroundColor: 'transparent',
+    position: 'relative',
   },
   closeButton: {
     position: 'absolute',
@@ -310,6 +361,58 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  cornerTopLeft: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 20,
+    height: 20,
+    borderTopWidth: 3,
+    borderLeftWidth: 3,
+    borderColor: '#009DA5',
+  },
+  cornerTopRight: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 20,
+    height: 20,
+    borderTopWidth: 3,
+    borderRightWidth: 3,
+    borderColor: '#009DA5',
+  },
+  cornerBottomLeft: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    width: 20,
+    height: 20,
+    borderBottomWidth: 3,
+    borderLeftWidth: 3,
+    borderColor: '#009DA5',
+  },
+  cornerBottomRight: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 20,
+    height: 20,
+    borderBottomWidth: 3,
+    borderRightWidth: 3,
+    borderColor: '#009DA5',
+  },
+  scanLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: '#009DA5',
+    shadowColor: '#009DA5',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 2,
   },
 });
 

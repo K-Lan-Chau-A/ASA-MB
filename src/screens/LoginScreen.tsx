@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useFCMToken } from '../hooks/useFCMToken';
 import { fcmService } from '../services/FCMService';
+import DeviceInfo from 'react-native-device-info';
 import {
   View,
   Text,
@@ -21,52 +22,77 @@ const LoginScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [isEmulator, setIsEmulator] = useState<boolean | null>(null);
   const { fcmToken, loading } = useFCMToken();
 
   useEffect(() => {
-    const initFCM = async () => {
+    const checkDeviceAndInitFCM = async () => {
       try {
+        // Check if device is emulator
+        const emulatorStatus = await DeviceInfo.isEmulator();
+        setIsEmulator(emulatorStatus);
+        
+        if (emulatorStatus) {
+          console.log('🚀 Running on emulator - skipping FCM initialization');
+          return;
+        }
+        
+        // Only initialize FCM on real devices
+        console.log('🚀 Running on real device - initializing FCM');
         await fcmService.init();
         const token = await fcmService.getFCMToken();
         if (token) {
           console.log('FCM Token initialized:', token);
         }
       } catch (error) {
-        console.error('Error initializing FCM:', error);
+        console.error('Error checking device or initializing FCM:', error);
       }
     };
 
-    initFCM();
+    checkDeviceAndInitFCM();
   }, []);
 
   const handleLogin = async () => {
     console.log('🚀 Login button pressed');
     console.log('🚀 Current fcmToken:', fcmToken);
     console.log('🚀 Loading state:', loading);
+    console.log('🚀 Is emulator:', isEmulator);
     
     try {
-      // Temporarily commented out FCM-related code
-      if (loading) {
-        console.log('🚀 Waiting for FCM token...');
-        Alert.alert('Thông báo', 'Đang khởi tạo kết nối với máy chủ...');
+      // Skip FCM validation if running on emulator
+      if (isEmulator === true) {
+        console.log('🚀 Running on emulator - skipping FCM token validation');
+        // Proceed directly to main app on emulator
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'MainApp' }],
+        });
         return;
       }
       
-      // Thử lấy token mới nếu chưa có
-      if (!fcmToken) {
-        console.log('🚀 No FCM token available, trying to get new one...');
-        const newToken = await fcmService.getFCMToken();
-        console.log('🚀 New token from service:', newToken);
-        
-        if (!newToken) {
-          console.error('🚀 FCM token not available');
-          Alert.alert('Lỗi', 'Không thể kết nối với máy chủ. Vui lòng thử lại sau.');
+      // FCM logic only for real devices
+      if (isEmulator === false) {
+        if (loading) {
+          console.log('🚀 Waiting for FCM token...');
+          Alert.alert('Thông báo', 'Đang khởi tạo kết nối với máy chủ...');
           return;
         }
+        
+        // Thử lấy token mới nếu chưa có
+        if (!fcmToken) {
+          console.log('🚀 No FCM token available, trying to get new one...');
+          const newToken = await fcmService.getFCMToken();
+          console.log('🚀 New token from service:', newToken);
+          
+          if (!newToken) {
+            console.error('🚀 FCM token not available');
+            Alert.alert('Lỗi', 'Không thể kết nối với máy chủ. Vui lòng thử lại sau.');
+            return;
+          }
+        }
+
+        console.log('🚀 Final FCM token for login:', fcmToken);
       }
-
-      console.log('🚀 Final FCM token for login:', fcmToken);
-
 
       // Chuyển đến màn hình chính với bottom navigation
       navigation.reset({

@@ -16,55 +16,206 @@ import { useNavigation, useRoute, NavigationProp, RouteProp, useFocusEffect } fr
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
 
+interface ProductUnit {
+  unitName: string;
+  price: number;
+  quantityInBaseUnit: number; // Số lượng đơn vị chuẩn trong 1 đơn vị này
+  isBaseUnit: boolean;
+}
+
 interface Product {
   id: string;
   name: string;
-  price: number;
+  price: number; // Giá của đơn vị hiện tại được chọn
   quantity: number;
   barcode?: string;
+  units: ProductUnit[]; // Danh sách các đơn vị có sẵn
+  selectedUnit: string; // Tên đơn vị hiện tại được chọn
 }
 
 // Sample products for selection (normally would come from API)
 const availableProducts = [
-  { id: '1', name: 'Coca Cola', price: 15000, barcode: '1234567890123' },
-  { id: '2', name: 'Pepsi Cola', price: 14000, barcode: '2345678901234' },
-  { id: '3', name: 'Nước suối Aquafina', price: 8000, barcode: '8934588063053' },
-  { id: '4', name: 'Bánh mì thịt nướng', price: 25000, barcode: '4567890123456' },
-  { id: '5', name: 'Cà phê đen', price: 18000, barcode: '5678901234567' },
-  { id: '6', name: 'Trà sữa trân châu', price: 35000, barcode: '6789012345678' },
-  { id: '7', name: 'Bánh bao nhân thịt', price: 12000, barcode: '7890123456789' },
-  { id: '8', name: 'Nước cam ép', price: 22000, barcode: '8901234567890' },
-  { id: '9', name: 'Nabati', price: 8000, barcode: '8993175535878' },
+  { 
+    id: '1', 
+    name: 'Coca Cola', 
+    price: 15000, 
+    barcode: '1234567890123',
+    units: [
+      { unitName: 'Chai', price: 15000, quantityInBaseUnit: 1, isBaseUnit: true },
+      { unitName: 'Lốc (6 chai)', price: 85000, quantityInBaseUnit: 6, isBaseUnit: false },
+      { unitName: 'Thùng (24 chai)', price: 330000, quantityInBaseUnit: 24, isBaseUnit: false }
+    ],
+    selectedUnit: 'Chai'
+  },
+  { 
+    id: '2', 
+    name: 'Pepsi Cola', 
+    price: 14000, 
+    barcode: '2345678901234',
+    units: [
+      { unitName: 'Chai', price: 14000, quantityInBaseUnit: 1, isBaseUnit: true },
+      { unitName: 'Lốc (6 chai)', price: 80000, quantityInBaseUnit: 6, isBaseUnit: false },
+      { unitName: 'Thùng (24 chai)', price: 310000, quantityInBaseUnit: 24, isBaseUnit: false }
+    ],
+    selectedUnit: 'Chai'
+  },
+  { 
+    id: '3', 
+    name: 'Nước suối Aquafina', 
+    price: 8000, 
+    barcode: '8934588063053',
+    units: [
+      { unitName: 'Chai', price: 8000, quantityInBaseUnit: 1, isBaseUnit: true },
+      { unitName: 'Lốc (12 chai)', price: 90000, quantityInBaseUnit: 12, isBaseUnit: false },
+      { unitName: 'Thùng (24 chai)', price: 175000, quantityInBaseUnit: 24, isBaseUnit: false }
+    ],
+    selectedUnit: 'Chai'
+  },
+  { 
+    id: '4', 
+    name: 'Bánh mì thịt nướng', 
+    price: 25000, 
+    barcode: '4567890123456',
+    units: [
+      { unitName: 'Cái', price: 25000, quantityInBaseUnit: 1, isBaseUnit: true }
+    ],
+    selectedUnit: 'Cái'
+  },
+  { 
+    id: '5', 
+    name: 'Cà phê đen', 
+    price: 18000, 
+    barcode: '5678901234567',
+    units: [
+      { unitName: 'Ly', price: 18000, quantityInBaseUnit: 1, isBaseUnit: true }
+    ],
+    selectedUnit: 'Ly'
+  },
+  { 
+    id: '6', 
+    name: 'Trà sữa trân châu', 
+    price: 35000, 
+    barcode: '6789012345678',
+    units: [
+      { unitName: 'Ly', price: 35000, quantityInBaseUnit: 1, isBaseUnit: true }
+    ],
+    selectedUnit: 'Ly'
+  },
+  { 
+    id: '7', 
+    name: 'Bánh bao nhân thịt', 
+    price: 12000, 
+    barcode: '7890123456789',
+    units: [
+      { unitName: 'Cái', price: 12000, quantityInBaseUnit: 1, isBaseUnit: true },
+      { unitName: 'Khay (10 cái)', price: 110000, quantityInBaseUnit: 10, isBaseUnit: false }
+    ],
+    selectedUnit: 'Cái'
+  },
+  { 
+    id: '8', 
+    name: 'Nước cam ép', 
+    price: 22000, 
+    barcode: '8901234567890',
+    units: [
+      { unitName: 'Ly', price: 22000, quantityInBaseUnit: 1, isBaseUnit: true }
+    ],
+    selectedUnit: 'Ly'
+  },
+  { 
+    id: '9', 
+    name: 'Nabati', 
+    price: 8000, 
+    barcode: '8993175535878',
+    units: [
+      { unitName: 'Gói', price: 8000, quantityInBaseUnit: 1, isBaseUnit: true },
+      { unitName: 'Hộp (20 gói)', price: 150000, quantityInBaseUnit: 20, isBaseUnit: false }
+    ],
+    selectedUnit: 'Gói'
+  },
 ];
 
 // Memoized ProductItem component for better performance
-const ProductItem = memo(({ item, onUpdateQuantity }: { 
+const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast }: { 
   item: Product; 
   onUpdateQuantity: (id: string, change: number) => void;
-}) => (
-  <View style={styles.productItem}>
-    <View style={styles.productImage} />
-    <View style={styles.productInfo}>
-      <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
-      <Text style={styles.productPrice}>{item.price.toLocaleString('vi-VN')}đ</Text>
+  onUnitChange: (id: string, unitName: string) => void;
+  isLast?: boolean;
+}) => {
+  const [showUnitDropdown, setShowUnitDropdown] = useState(false);
+  
+  return (
+    <View style={styles.productItem}>
+      <View style={styles.productImage} />
+      <View style={styles.productInfo}>
+        <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+        <Text style={styles.productPrice}>{item.price.toLocaleString('vi-VN')}đ</Text>
+        
+        {/* Unit Selector */}
+        {item.units && item.units.length > 1 && (
+          <View style={styles.unitContainer}>
+            <TouchableOpacity 
+              style={styles.unitSelector}
+              onPress={() => setShowUnitDropdown(!showUnitDropdown)}
+            >
+              <Text style={styles.unitText}>{item.selectedUnit}</Text>
+              <Icon name={showUnitDropdown ? "chevron-up" : "chevron-down"} size={16} color="#009DA5" />
+            </TouchableOpacity>
+            
+            {showUnitDropdown && (
+              <View style={[
+                styles.unitDropdown,
+                isLast && styles.unitDropdownLast // Position above if last item
+              ]}>
+                {item.units.map((unit) => (
+                  <TouchableOpacity
+                    key={unit.unitName}
+                    style={[
+                      styles.unitOption,
+                      unit.unitName === item.selectedUnit && styles.unitOptionSelected
+                    ]}
+                    onPress={() => {
+                      onUnitChange(item.id, unit.unitName);
+                      setShowUnitDropdown(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.unitOptionText,
+                      unit.unitName === item.selectedUnit && styles.unitOptionTextSelected
+                    ]}>
+                      {unit.unitName}
+                    </Text>
+                    <Text style={[
+                      styles.unitOptionPrice,
+                      unit.unitName === item.selectedUnit && styles.unitOptionPriceSelected
+                    ]}>
+                      {unit.price.toLocaleString('vi-VN')}đ
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+      <View style={styles.quantityControls}>
+        <TouchableOpacity
+          style={styles.quantityButton}
+          onPress={() => onUpdateQuantity(item.id, -1)}
+        >
+          <Text style={styles.quantityButtonText}>−</Text>
+        </TouchableOpacity>
+        <Text style={styles.quantity}>{item.quantity}</Text>
+        <TouchableOpacity
+          style={styles.quantityButton}
+          onPress={() => onUpdateQuantity(item.id, 1)}
+        >
+          <Text style={styles.quantityButtonText}>+</Text>
+        </TouchableOpacity>
+      </View>
     </View>
-    <View style={styles.quantityControls}>
-      <TouchableOpacity
-        style={styles.quantityButton}
-        onPress={() => onUpdateQuantity(item.id, -1)}
-      >
-        <Text style={styles.quantityButtonText}>−</Text>
-      </TouchableOpacity>
-      <Text style={styles.quantity}>{item.quantity}</Text>
-      <TouchableOpacity
-        style={styles.quantityButton}
-        onPress={() => onUpdateQuantity(item.id, 1)}
-      >
-        <Text style={styles.quantityButtonText}>+</Text>
-      </TouchableOpacity>
-    </View>
-  </View>
-));
+  );
+});
 
 // Memoized AvailableProductItem component
 const AvailableProductItem = memo(({ 
@@ -75,7 +226,7 @@ const AvailableProductItem = memo(({
 }: {
   item: Omit<Product, 'quantity'>;
   currentQuantity: number;
-  onAddProduct: (product: Omit<Product, 'quantity'>) => void;
+  onAddProduct: () => void;
   onUpdateQuantity: (id: string, change: number) => void;
 }) => (
   <View style={[
@@ -112,7 +263,7 @@ const AvailableProductItem = memo(({
       // Show add button if not in cart yet
       <TouchableOpacity
         style={styles.addToCartButton}
-        onPress={() => onAddProduct(item)}
+        onPress={onAddProduct}
       >
         <Icon name="plus" size={16} color="#009DA5" />
         <Text style={styles.addToCartText}>Thêm</Text>
@@ -189,21 +340,21 @@ const OrderScreen = () => {
   const addProduct = useCallback((product: Omit<Product, 'quantity'>) => {
     console.log('📱 Adding product:', product.name);
     setProducts(prevProducts => {
-      const existingIndex = prevProducts.findIndex(p => p.id === product.id);
+      const existingIndex = prevProducts.findIndex(p => p.id === product.id && p.selectedUnit === product.selectedUnit);
       
       if (existingIndex >= 0) {
-        // Increase quantity if product already exists
+        // Increase quantity if product with same unit already exists
         const updatedProducts = [...prevProducts];
         updatedProducts[existingIndex] = {
           ...updatedProducts[existingIndex],
           quantity: updatedProducts[existingIndex].quantity + 1
         };
-        console.log('📱 Updated quantity for:', product.name);
+        console.log('📱 Updated quantity for:', product.name, product.selectedUnit);
         return updatedProducts;
       } else {
-        // Add new product
-        const newProducts = [...prevProducts, { ...product, quantity: 1 }];
-        console.log('📱 Added new product, total products:', newProducts.length);
+        // Add new product at the TOP of the list (index 0) for better UX
+        const newProducts = [{ ...product, quantity: 1 }, ...prevProducts];
+        console.log('📱 Added new product at top, total products:', newProducts.length);
         return newProducts;
       }
     });
@@ -217,7 +368,13 @@ const OrderScreen = () => {
       // Find product by barcode and add to order
       const foundProduct = availableProducts.find(p => p.barcode === barcode);
       if (foundProduct) {
-        addProduct(foundProduct);
+        // Create a complete product object with units
+        const productToAdd = {
+          ...foundProduct,
+          price: foundProduct.units[0].price, // Use base unit price
+          selectedUnit: foundProduct.units[0].unitName // Use base unit
+        };
+        addProduct(productToAdd);
       } else {
         // Product not found, automatically navigate to create new product
         console.log('📱 Product not found, navigating to AddProduct screen:', barcode);
@@ -233,7 +390,15 @@ const OrderScreen = () => {
   useEffect(() => {
     if (route.params?.newProduct) {
       const newProduct = route.params.newProduct;
-      addProduct(newProduct);
+      // Create a complete product object with default units
+      const productToAdd = {
+        ...newProduct,
+        units: [
+          { unitName: 'Cái', price: newProduct.price, quantityInBaseUnit: 1, isBaseUnit: true }
+        ],
+        selectedUnit: 'Cái'
+      };
+      addProduct(productToAdd);
       console.log('📱 Added new product from AddProductScreen:', newProduct.name);
       
       // Clear the newProduct param to prevent re-adding on re-render
@@ -250,6 +415,24 @@ const OrderScreen = () => {
         }
         return product;
       }).filter(Boolean) as Product[]
+    );
+  }, []);
+
+  const handleUnitChange = useCallback((id: string, unitName: string) => {
+    setProducts(prevProducts => 
+      prevProducts.map(product => {
+        if (product.id === id) {
+          const selectedUnit = product.units.find(unit => unit.unitName === unitName);
+          if (selectedUnit) {
+            return {
+              ...product,
+              selectedUnit: unitName,
+              price: selectedUnit.price
+            };
+          }
+        }
+        return product;
+      })
     );
   }, []);
 
@@ -364,9 +547,14 @@ const OrderScreen = () => {
     ).length;
   }, [searchText]);
 
-  const renderProduct = useCallback(({ item }: { item: Product }) => (
-    <ProductItem item={item} onUpdateQuantity={updateQuantity} />
-  ), [updateQuantity]);
+  const renderProduct = useCallback(({ item, index }: { item: Product; index: number }) => (
+    <ProductItem 
+      item={item} 
+      onUpdateQuantity={updateQuantity} 
+      onUnitChange={handleUnitChange}
+      isLast={index === products.length - 1}
+    />
+  ), [updateQuantity, handleUnitChange, products.length]);
 
   const getItemLayout = useCallback((data: any, index: number) => ({
     length: 82, // Height of productItem (66px + 16px margin)
@@ -396,11 +584,21 @@ const OrderScreen = () => {
   const renderAvailableProduct = useCallback(({ item }: { item: any }) => {
     const currentQuantity = productQuantities.get(item.id) || 0;
     
+    const handleAddProduct = () => {
+      // Create product with base unit selected
+      const productToAdd = {
+        ...item,
+        price: item.units[0].price,
+        selectedUnit: item.units[0].unitName
+      };
+      addProduct(productToAdd);
+    };
+    
     return (
       <AvailableProductItem
         item={item}
         currentQuantity={currentQuantity}
-        onAddProduct={addProduct}
+        onAddProduct={handleAddProduct}
         onUpdateQuantity={updateQuantity}
       />
     );
@@ -443,18 +641,7 @@ const OrderScreen = () => {
         </View>
       </TouchableWithoutFeedback>
 
-      {/* Customer and Order Type */}
-      <View style={styles.customerSection}>
-        <View style={styles.customerRow}>
-          <Text style={styles.label}>Khách hàng:</Text>
-          <Text style={styles.label}>Khách lẻ</Text>
-          <Icon name="chevron-right" size={20} color="#666" />
-        </View>
-      </View>
-
-
-
-      {/* Available Products (when searching) */}
+      {/* Available Products (when searching) - Moved right below search */}
       {showAvailableProducts && (
         <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
           <View style={styles.availableProductsSection}>
@@ -507,6 +694,17 @@ const OrderScreen = () => {
         </TouchableWithoutFeedback>
       )}
 
+      {/* Customer and Order Type - Only show when not searching */}
+      {!showAvailableProducts && (
+        <View style={styles.customerSection}>
+          <View style={styles.customerRow}>
+            <Text style={styles.label}>Khách hàng:</Text>
+            <Text style={styles.label}>Khách lẻ</Text>
+            <Icon name="chevron-right" size={20} color="#666" />
+          </View>
+        </View>
+      )}
+
       {/* Product List */}
       <View style={styles.productList}>
         {products.length === 0 ? (
@@ -522,14 +720,15 @@ const OrderScreen = () => {
             keyExtractor={keyExtractor}
             showsVerticalScrollIndicator={false}
             getItemLayout={getItemLayout}
-            removeClippedSubviews={true}
-            maxToRenderPerBatch={10}
+            removeClippedSubviews={false}
+            maxToRenderPerBatch={15}
             updateCellsBatchingPeriod={50}
-            initialNumToRender={10}
-            windowSize={10}
+            initialNumToRender={12}
+            windowSize={8}
             keyboardShouldPersistTaps="handled"
-            decelerationRate={0.98}
+            decelerationRate={0.992}
             scrollEventThrottle={16}
+            contentContainerStyle={styles.productListContent}
           />
         )}
       </View>
@@ -616,6 +815,9 @@ const styles = StyleSheet.create({
   productList: {
     flex: 1,
     marginHorizontal: 16,
+  },
+  productListContent: {
+    paddingBottom: 80, // Extra space at bottom for dropdown visibility
   },
   productItem: {
     flexDirection: 'row',
@@ -742,7 +944,7 @@ const styles = StyleSheet.create({
 
 
   availableProductsList: {
-    maxHeight: 300,
+    maxHeight: 400,
     flex: 0,
     flexGrow: 0,
   },
@@ -761,7 +963,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
     marginTop: -8, // Move closer to search bar
-    marginBottom: 16,
+    marginBottom: 8,
     borderRadius: 8,
     padding: 12,
     shadowColor: '#000',
@@ -774,6 +976,7 @@ const styles = StyleSheet.create({
     elevation: 5,
     borderWidth: 1,
     borderColor: '#E5E5E5',
+    maxHeight: '60%', // Limit to 60% of screen height
   },
   availableProductsTitle: {
     fontSize: 16,
@@ -822,6 +1025,79 @@ const styles = StyleSheet.create({
     color: '#009DA5',
     fontWeight: 'bold',
     marginTop: 2,
+  },
+  unitContainer: {
+    marginTop: 8,
+    position: 'relative',
+  },
+  unitSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FA',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#009DA5',
+    alignSelf: 'flex-start',
+  },
+  unitText: {
+    fontSize: 12,
+    color: '#009DA5',
+    fontWeight: '500',
+    marginRight: 4,
+  },
+  unitDropdown: {
+    position: 'absolute',
+    top: 30,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  unitDropdownLast: {
+    top: undefined,
+    bottom: 30, // Position above for last item
+  },
+  unitOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  unitOptionSelected: {
+    backgroundColor: '#F0F9FA',
+  },
+  unitOptionText: {
+    fontSize: 13,
+    color: '#333333',
+    fontWeight: '500',
+  },
+  unitOptionTextSelected: {
+    color: '#009DA5',
+    fontWeight: 'bold',
+  },
+  unitOptionPrice: {
+    fontSize: 12,
+    color: '#666666',
+  },
+  unitOptionPriceSelected: {
+    color: '#009DA5',
+    fontWeight: 'bold',
   },
 });
 
