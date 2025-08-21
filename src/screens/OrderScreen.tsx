@@ -185,12 +185,7 @@ const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast }: {
                     ]}>
                       {unit.unitName}
                     </Text>
-                    <Text style={[
-                      styles.unitOptionPrice,
-                      unit.unitName === item.selectedUnit && styles.unitOptionPriceSelected
-                    ]}>
-                      {unit.price.toLocaleString('vi-VN')}đ
-                    </Text>
+
                   </TouchableOpacity>
                 ))}
               </View>
