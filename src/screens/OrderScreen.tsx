@@ -270,6 +270,12 @@ const AvailableProductItem = memo(({
 // Global state to persist products across navigations
 let persistedProducts: Product[] = [];
 
+// Global function to clear order state
+export const clearGlobalOrderState = () => {
+  console.log('📱 Clearing global order state');
+  persistedProducts = [];
+};
+
 const OrderScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'Order'>>();
@@ -316,13 +322,23 @@ const OrderScreen = () => {
       console.log('📱 Current products in state:', products.length);
       console.log('📱 Persisted products:', persistedProducts.length);
       
+      // Check if we're coming back from ConfirmOrder screen
+      // If so, clear the products as the order was completed or cancelled
+      if (route.params?.orderCompleted) {
+        console.log('📱 Order completed, clearing products');
+        clearOrderState();
+        // Clear the orderCompleted param to prevent re-clearing
+        navigation.setParams({ orderCompleted: undefined });
+        return;
+      }
+      
       // Always restore from persisted state when focusing
       // This ensures state is maintained when coming back from Scanner or AddProduct
       if (persistedProducts.length > 0 || products.length !== persistedProducts.length) {
         console.log('📱 Restoring products from global state');
         setProducts([...persistedProducts]);
       }
-    }, [])
+    }, [route.params?.orderCompleted])
   );
 
   // Function to completely clear order state
@@ -500,21 +516,11 @@ const OrderScreen = () => {
       return;
     }
     
-    Alert.alert(
-      'Thanh toán',
-      `Tổng cộng: ${totalAmount.toLocaleString('vi-VN')}đ\n\nXác nhận thanh toán?`,
-      [
-        { text: 'Hủy', style: 'cancel' },
-        { 
-          text: 'Thanh toán', 
-          onPress: () => {
-            Alert.alert('Thành công', 'Thanh toán thành công!');
-            clearOrderState(); // Use dedicated clear function
-            navigation.navigate('MainApp');
-          }
-        },
-      ]
-    );
+    // Navigate to ConfirmOrderScreen with order data
+    navigation.navigate('ConfirmOrder', {
+      products: products,
+      totalAmount: totalAmount
+    });
   };
 
   const filteredProducts = useMemo(() => {
@@ -739,7 +745,7 @@ const OrderScreen = () => {
             <Text style={styles.cancelButtonText}>Hủy đơn</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.payButton} onPress={handlePay}>
-            <Text style={styles.payButtonText}>Thanh toán</Text>
+            <Text style={styles.payButtonText}>Tiếp theo</Text>
           </TouchableOpacity>
         </View>
       </View>

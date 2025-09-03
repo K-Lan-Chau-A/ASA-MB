@@ -1,0 +1,470 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+} from 'react-native';
+import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navigation/native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { RootStackParamList } from '../types/navigation';
+import { clearGlobalOrderState } from './OrderScreen';
+
+interface Product {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  selectedUnit: string;
+}
+
+interface InvoiceData {
+  invoiceNumber: string;
+  date: string;
+  time: string;
+  paymentMethod: string;
+  totalAmount: number;
+  products: Product[];
+  discount: number;
+}
+
+const InvoicePreviewScreen = () => {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'InvoicePreview'>>();
+  
+  const { invoiceData } = route.params;
+  const [copyCount, setCopyCount] = useState(1);
+
+  const formatCurrency = (amount: number) => {
+    return amount.toLocaleString('vi-VN') + '₫';
+  };
+
+  const numberToWords = (num: number): string => {
+    const ones = ['', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'];
+    const tens = ['', '', 'hai mươi', 'ba mươi', 'bốn mươi', 'năm mươi', 'sáu mươi', 'bảy mươi', 'tám mươi', 'chín mươi'];
+    const hundreds = ['', 'một trăm', 'hai trăm', 'ba trăm', 'bốn trăm', 'năm trăm', 'sáu trăm', 'bảy trăm', 'tám trăm', 'chín trăm'];
+    
+    if (num === 0) return 'không';
+    if (num < 10) return ones[num];
+    if (num < 100) {
+      const ten = Math.floor(num / 10);
+      const one = num % 10;
+      if (ten === 1) return one === 0 ? 'mười' : `mười ${ones[one]}`;
+      return one === 0 ? tens[ten] : `${tens[ten]} ${ones[one]}`;
+    }
+    if (num < 1000) {
+      const hundred = Math.floor(num / 100);
+      const remainder = num % 100;
+      if (remainder === 0) return hundreds[hundred];
+      return `${hundreds[hundred]} ${numberToWords(remainder)}`;
+    }
+    if (num < 1000000) {
+      const thousand = Math.floor(num / 1000);
+      const remainder = num % 1000;
+      if (remainder === 0) return `${numberToWords(thousand)} nghìn`;
+      return `${numberToWords(thousand)} nghìn ${numberToWords(remainder)}`;
+    }
+    return 'số quá lớn';
+  };
+
+  const handlePrint = () => {
+    Alert.alert(
+      'In hóa đơn',
+      `Bạn muốn in ${copyCount} bản hóa đơn?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        { 
+          text: 'In', 
+          onPress: () => {
+            Alert.alert('Thành công', 'Đã gửi lệnh in hóa đơn!', [
+              {
+                text: 'OK',
+                onPress: () => {
+                  // Clear global order state before navigating to MainApp
+                  clearGlobalOrderState();
+                  // Navigate to home screen after printing
+                  navigation.navigate('MainApp');
+                }
+              }
+            ]);
+          }
+        },
+      ]
+    );
+  };
+
+  const handleShare = () => {
+    Alert.alert('Thông báo', 'Chức năng chia sẻ đang được phát triển');
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Icon name="arrow-left" size={24} color="#000" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Xem trước</Text>
+        <View style={styles.headerRight}>
+          <TouchableOpacity onPress={handleShare} style={styles.shareButton}>
+            <Icon name="share-variant" size={20} color="#666" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handlePrint} style={styles.printButton}>
+            <Text style={styles.printButtonText}>In</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Copy Count */}
+      <View style={styles.copyCountContainer}>
+        <Text style={styles.copyCountLabel}>Số liên</Text>
+        <View style={styles.copyCountControls}>
+          <TouchableOpacity 
+            style={styles.copyCountButton}
+            onPress={() => setCopyCount(Math.max(1, copyCount - 1))}
+          >
+            <Text style={styles.copyCountButtonText}>-</Text>
+          </TouchableOpacity>
+          <Text style={styles.copyCountValue}>{copyCount}</Text>
+          <TouchableOpacity 
+            style={styles.copyCountButton}
+            onPress={() => setCopyCount(copyCount + 1)}
+          >
+            <Text style={styles.copyCountButtonText}>+</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Invoice Preview */}
+      <ScrollView style={styles.invoiceContainer} showsVerticalScrollIndicator={false}>
+        <View style={styles.invoice}>
+          {/* Store Information */}
+          <View style={styles.storeInfo}>
+            <Text style={styles.storeName}>Cửa hàng XYZ</Text>
+            <Text style={styles.storeAddress}>Địa chỉ: 123 JQK, phường Long Thạnh Mỹ, TP. Thủ Đức</Text>
+            <Text style={styles.storePhone}>Điện thoại: 0123456789</Text>
+          </View>
+
+          {/* Invoice Header */}
+          <View style={styles.invoiceHeader}>
+            <Text style={styles.invoiceTitle}>HÓA ĐƠN BÁN HÀNG</Text>
+            <Text style={styles.invoiceNumber}>SỐ HĐ: {invoiceData.invoiceNumber}</Text>
+            <Text style={styles.invoiceDate}>Ngày {invoiceData.date}</Text>
+          </View>
+
+          {/* Customer Information */}
+          <View style={styles.customerInfo}>
+            <Text style={styles.customerLabel}>Khách hàng: Khách lẻ</Text>
+            <Text style={styles.customerField}>SDT:</Text>
+            <Text style={styles.customerField}>Địa chỉ:</Text>
+          </View>
+
+          {/* Divider */}
+          <View style={styles.divider} />
+
+          {/* Product List Header */}
+          <View style={styles.productHeader}>
+            <Text style={styles.productHeaderPrice}>Đơn giá</Text>
+            <Text style={styles.productHeaderQuantity}>SL</Text>
+            <Text style={styles.productHeaderAmount}>Thành tiền</Text>
+          </View>
+
+          {/* Product List */}
+          {invoiceData.products.map((product, index) => (
+            <View key={product.id} style={styles.productItem}>
+              <View style={styles.productNameContainer}>
+                <Text style={styles.productName}>{product.name}</Text>
+                <Text style={styles.productPrice}>{formatCurrency(product.price)}</Text>
+              </View>
+              <Text style={styles.productQuantity}>{product.quantity}</Text>
+              <Text style={styles.productAmount}>{formatCurrency(product.price * product.quantity)}</Text>
+              {index < invoiceData.products.length - 1 && <View style={styles.productDivider} />}
+            </View>
+          ))}
+
+          {/* Summary Divider */}
+          <View style={styles.divider} />
+
+          {/* Summary */}
+          <View style={styles.summary}>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Tổng tiền hàng:</Text>
+              <Text style={styles.summaryValue}>{formatCurrency(invoiceData.totalAmount + invoiceData.discount)}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Chiết khấu {invoiceData.discount > 0 ? Math.round((invoiceData.discount / (invoiceData.totalAmount + invoiceData.discount)) * 100) : 0}%:</Text>
+              <Text style={styles.summaryValue}>{formatCurrency(invoiceData.discount)}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Tổng thanh toán:</Text>
+              <Text style={styles.summaryTotal}>{formatCurrency(invoiceData.totalAmount)}</Text>
+            </View>
+            <Text style={styles.summaryWords}>({numberToWords(invoiceData.totalAmount)} đồng chẵn)</Text>
+          </View>
+
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Cảm ơn và hẹn gặp lại!</Text>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  shareButton: {
+    padding: 4,
+  },
+  printButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#009DA5',
+    borderRadius: 4,
+  },
+  printButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  copyCountContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
+  },
+  copyCountLabel: {
+    fontSize: 16,
+    color: '#000',
+  },
+  copyCountControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  copyCountButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  copyCountButtonText: {
+    fontSize: 18,
+    color: '#009DA5',
+    fontWeight: 'bold',
+  },
+  copyCountValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#000',
+    minWidth: 20,
+    textAlign: 'center',
+  },
+  invoiceContainer: {
+    flex: 1,
+    padding: 16,
+  },
+  invoice: {
+    backgroundColor: '#FFFFFF',
+    padding: 20,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  storeInfo: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  storeName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000',
+    marginBottom: 8,
+  },
+  storeAddress: {
+    fontSize: 14,
+    color: '#000',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  storePhone: {
+    fontSize: 14,
+    color: '#000',
+  },
+  invoiceHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  invoiceTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#000',
+    marginBottom: 8,
+  },
+  invoiceNumber: {
+    fontSize: 14,
+    color: '#000',
+    marginBottom: 4,
+  },
+  invoiceDate: {
+    fontSize: 14,
+    color: '#000',
+  },
+  customerInfo: {
+    marginBottom: 16,
+  },
+  customerLabel: {
+    fontSize: 14,
+    color: '#000',
+    marginBottom: 4,
+  },
+  customerField: {
+    fontSize: 14,
+    color: '#000',
+    marginBottom: 2,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#000',
+    marginVertical: 16,
+  },
+  productHeader: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  productHeaderPrice: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  productHeaderQuantity: {
+    width: 40,
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#000',
+    textAlign: 'center',
+  },
+  productHeaderAmount: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#000',
+    textAlign: 'right',
+  },
+  productItem: {
+    marginBottom: 8,
+  },
+  productNameContainer: {
+    flex: 1,
+    marginBottom: 4,
+  },
+  productName: {
+    fontSize: 14,
+    color: '#000',
+    marginBottom: 2,
+  },
+  productPrice: {
+    fontSize: 12,
+    color: '#666',
+  },
+  productQuantity: {
+    position: 'absolute',
+    right: 60,
+    top: 0,
+    fontSize: 14,
+    color: '#000',
+    width: 40,
+    textAlign: 'center',
+  },
+  productAmount: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    fontSize: 14,
+    color: '#000',
+    textAlign: 'right',
+    minWidth: 60,
+  },
+  productDivider: {
+    height: 1,
+    backgroundColor: '#E5E5E5',
+    marginTop: 8,
+    borderStyle: 'dotted',
+  },
+  summary: {
+    marginTop: 16,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: '#000',
+  },
+  summaryValue: {
+    fontSize: 14,
+    color: '#000',
+  },
+  summaryTotal: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  summaryWords: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
+    marginTop: 8,
+  },
+  footer: {
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  footerText: {
+    fontSize: 14,
+    color: '#000',
+    fontStyle: 'italic',
+  },
+});
+
+export default InvoicePreviewScreen;

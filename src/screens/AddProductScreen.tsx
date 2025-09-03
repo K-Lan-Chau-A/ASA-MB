@@ -17,14 +17,37 @@ import { RootStackParamList } from '../types/navigation';
 interface NewProduct {
   barcode: string;
   name: string;
-  brand: string;
+  category: string;
   importPrice: string;
   sellPrice: string;
   unit: string;
   quantity: string;
   discount: string;
   image: string;
+  description?: string;
 }
+
+const categories = [
+  'Đồ uống',
+  'Thực phẩm',
+  'Bánh kẹo',
+  'Khác'
+];
+
+const units = [
+  'Cái',
+  'Chai',
+  'Gói',
+  'Hộp',
+  'Thùng',
+  'Kg',
+  'Gram',
+  'Lít',
+  'Ml',
+  'Ly',
+  'Túi',
+  'Khác'
+];
 
 const AddProductScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
@@ -33,14 +56,18 @@ const AddProductScreen = () => {
   const [product, setProduct] = useState<NewProduct>({
     barcode: route.params?.barcode || '',
     name: '',
-    brand: '',
+    category: '',
     importPrice: '',
     sellPrice: '',
     unit: '',
     quantity: '',
     discount: '0',
     image: '',
+    description: '',
   });
+
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [showUnitDropdown, setShowUnitDropdown] = useState(false);
 
   const updateProduct = useCallback((field: keyof NewProduct, value: string) => {
     setProduct(prev => ({ ...prev, [field]: value }));
@@ -62,6 +89,11 @@ const AddProductScreen = () => {
     Alert.alert('Thông báo', 'Tính năng thêm ảnh sẽ được triển khai sau');
   }, []);
 
+  const handleScanBarcode = useCallback(() => {
+    // Điều hướng tới màn hình quét mã, giống OrderScreen
+    navigation.navigate('Scanner');
+  }, [navigation]);
+
   const handleSaveProduct = useCallback(() => {
     // Validate required fields
     if (!product.name.trim()) {
@@ -69,8 +101,18 @@ const AddProductScreen = () => {
       return;
     }
     
+    if (!product.category.trim()) {
+      Alert.alert('Lỗi', 'Vui lòng chọn nhóm hàng');
+      return;
+    }
+    
     if (!product.sellPrice.trim()) {
       Alert.alert('Lỗi', 'Vui lòng nhập giá bán');
+      return;
+    }
+
+    if (!product.unit.trim()) {
+      Alert.alert('Lỗi', 'Vui lòng chọn đơn vị');
       return;
     }
 
@@ -105,15 +147,8 @@ const AddProductScreen = () => {
         {
           text: 'OK',
           onPress: () => {
-            // Navigate back to order screen and add the new product
-            navigation.navigate('Order', {
-              newProduct: {
-                id: Date.now().toString(),
-                name: product.name,
-                price: sellPrice,
-                barcode: product.barcode,
-              }
-            });
+            // Navigate back to ProductsScreen
+            navigation.goBack();
           }
         }
       ]
@@ -154,18 +189,23 @@ const AddProductScreen = () => {
           {/* Barcode */}
           <View style={styles.fieldContainer}>
             <Text style={styles.label}>Mã vạch</Text>
-            <TextInput
-              style={styles.input}
-              value={product.barcode}
-              onChangeText={(text) => updateProduct('barcode', text)}
-              placeholder="Nhập mã vạch"
-              editable={!route.params?.barcode} // Disable if barcode came from scanner
-            />
+            <View style={styles.barcodeRow}>
+              <TextInput
+                style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                value={product.barcode}
+                onChangeText={(text) => updateProduct('barcode', text)}
+                placeholder="Nhập mã vạch"
+                editable={!route.params?.barcode}
+              />
+              <TouchableOpacity style={styles.qrButton} onPress={handleScanBarcode}>
+                <Icon name="qrcode-scan" size={22} color="#009DA5" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Product Name */}
           <View style={styles.fieldContainer}>
-            <Text style={[styles.label, styles.required]}>Tên sản phẩm *</Text>
+            <Text style={styles.label}>Tên sản phẩm <Text style={styles.requiredStar}>*</Text></Text>
             <TextInput
               style={styles.input}
               value={product.name}
@@ -174,19 +214,52 @@ const AddProductScreen = () => {
             />
           </View>
 
-          {/* Brand */}
+          {/* Category */}
           <View style={styles.fieldContainer}>
-            <Text style={styles.label}>Nhóm hàng</Text>
-            <TouchableOpacity style={styles.dropdownInput}>
-              <Text style={styles.dropdownPlaceholder}>Chọn nhóm hàng</Text>
+            <Text style={styles.label}>Nhóm hàng <Text style={styles.requiredStar}>*</Text></Text>
+            <TouchableOpacity 
+              style={styles.dropdownInput}
+              onPress={() => setShowCategoryDropdown(!showCategoryDropdown)}
+            >
+              <Text style={[
+                styles.dropdownText,
+                !product.category && styles.dropdownPlaceholder
+              ]}>
+                {product.category || 'Chọn nhóm hàng'}
+              </Text>
               <Icon name="chevron-down" size={20} color="#666" />
             </TouchableOpacity>
+            
+            {showCategoryDropdown && (
+              <View style={styles.dropdown}>
+                {categories.map((category) => (
+                  <TouchableOpacity
+                    key={category}
+                    style={[
+                      styles.dropdownItem,
+                      product.category === category && styles.dropdownItemSelected
+                    ]}
+                    onPress={() => {
+                      updateProduct('category', category);
+                      setShowCategoryDropdown(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.dropdownItemText,
+                      product.category === category && styles.dropdownItemTextSelected
+                    ]}>
+                      {category}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
 
           {/* Prices Row */}
           <View style={styles.rowContainer}>
             <View style={[styles.fieldContainer, styles.halfWidth]}>
-              <Text style={[styles.label, styles.required]}>Nhập giá vốn *</Text>
+              <Text style={styles.label}>Nhập giá vốn <Text style={styles.requiredStar}>*</Text></Text>
               <TextInput
                 style={styles.input}
                 value={product.importPrice}
@@ -197,7 +270,7 @@ const AddProductScreen = () => {
             </View>
 
             <View style={[styles.fieldContainer, styles.halfWidth]}>
-              <Text style={[styles.label, styles.required]}>Nhập giá bán *</Text>
+              <Text style={styles.label}>Nhập giá bán <Text style={styles.requiredStar}>*</Text></Text>
               <TextInput
                 style={styles.input}
                 value={product.sellPrice}
@@ -211,22 +284,55 @@ const AddProductScreen = () => {
           {/* Single Row */}
           <View style={styles.rowContainer}>
             <View style={[styles.fieldContainer, styles.oneThirdWidth]}>
-              <Text style={styles.label}>Số lượng</Text>
+              <Text style={styles.label}>Số lượng <Text style={styles.requiredStar}>*</Text></Text>
               <TextInput
                 style={styles.input}
                 value={product.quantity}
                 onChangeText={(text) => updateProduct('quantity', text)}
-                placeholder="Nhập số lượng"
+                placeholder="Số lượng"
                 keyboardType="numeric"
               />
             </View>
 
             <View style={[styles.fieldContainer, styles.oneThirdWidth]}>
-              <Text style={styles.label}>Đơn vị</Text>
-              <TouchableOpacity style={styles.dropdownInput}>
-                <Text style={styles.dropdownPlaceholder}>Đơn vị</Text>
+              <Text style={styles.label}>Đơn vị <Text style={styles.requiredStar}>*</Text></Text>
+              <TouchableOpacity 
+                style={styles.dropdownInput}
+                onPress={() => setShowUnitDropdown(!showUnitDropdown)}
+              >
+                <Text style={[
+                  styles.dropdownText,
+                  !product.unit && styles.dropdownPlaceholder
+                ]}>
+                  {product.unit || 'Đơn vị'}
+                </Text>
                 <Icon name="chevron-down" size={20} color="#666" />
               </TouchableOpacity>
+              
+              {showUnitDropdown && (
+                <View style={styles.dropdown}>
+                  {units.map((unit) => (
+                    <TouchableOpacity
+                      key={unit}
+                      style={[
+                        styles.dropdownItem,
+                        product.unit === unit && styles.dropdownItemSelected
+                      ]}
+                      onPress={() => {
+                        updateProduct('unit', unit);
+                        setShowUnitDropdown(false);
+                      }}
+                    >
+                      <Text style={[
+                        styles.dropdownItemText,
+                        product.unit === unit && styles.dropdownItemTextSelected
+                      ]}>
+                        {unit}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
 
             <View style={[styles.fieldContainer, styles.oneThirdWidth]}>
@@ -307,6 +413,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontWeight: '500',
   },
+  requiredStar: {
+    color: '#E53935',
+    fontWeight: 'bold',
+  },
   required: {
     color: '#000',
   },
@@ -328,9 +438,60 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E5E5',
   },
+  barcodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  qrButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#F0F9FA',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
   dropdownPlaceholder: {
     fontSize: 16,
     color: '#999',
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: '#000',
+  },
+  dropdown: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 1000,
+    maxHeight: 200,
+  },
+  dropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  dropdownItemSelected: {
+    backgroundColor: '#F0F9FA',
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  dropdownItemTextSelected: {
+    color: '#009DA5',
+    fontWeight: 'bold',
   },
   rowContainer: {
     flexDirection: 'row',

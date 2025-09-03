@@ -9,6 +9,8 @@ import BottomNavigation from './src/components/BottomNavigation';
 import NotificationScreen from './src/screens/NotificationScreen';
 import ScannerScreen from './src/screens/ScannerScreen';
 import OrderScreen from './src/screens/OrderScreen';
+import ConfirmOrderScreen from './src/screens/ConfirmOrderScreen';
+import InvoicePreviewScreen from './src/screens/InvoicePreviewScreen';
 import AddProductScreen from './src/screens/AddProductScreen';
 import ChatbotScreen from './src/screens/ChatbotScreen';
 import { useNotification } from './src/hooks/useNotification';
@@ -50,6 +52,22 @@ function App() {
         <Stack.Screen 
           name="Order" 
           component={OrderScreen}
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right'
+          }}
+        />
+        <Stack.Screen 
+          name="ConfirmOrder" 
+          component={ConfirmOrderScreen}
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right'
+          }}
+        />
+        <Stack.Screen 
+          name="InvoicePreview" 
+          component={InvoicePreviewScreen}
           options={{
             headerShown: false,
             animation: 'slide_from_right'
