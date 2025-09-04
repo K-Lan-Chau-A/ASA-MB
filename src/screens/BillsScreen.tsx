@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, Modal, ScrollView, TextInput, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, ScrollView, TextInput, Keyboard, KeyboardAvoidingView, Platform } from 'react-native';
+import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
@@ -17,6 +18,8 @@ interface BillItem {
 
 const BillsScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [selected, setSelected] = useState<BillItem | null>(null);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'cancel'>('all');
@@ -89,12 +92,14 @@ const BillsScreen = () => {
     return list;
   }, [bills, query, statusFilter, sortOrder]);
 
-  // Hide bottom navigation when keyboard is open
+  // Hide bottom navigation when keyboard is open and track visibility
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardVisible(true);
       navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
     });
     const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
       navigation.getParent()?.setOptions({ tabBarStyle: undefined });
     });
     return () => {
@@ -122,7 +127,8 @@ const BillsScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['bottom','left','right']}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'height' : 'padding'} style={{ flex: 1 }}>
       <View style={styles.content}>
         {/* Search + Sort */}
         <View style={styles.searchSortRow}>
@@ -173,10 +179,11 @@ const BillsScreen = () => {
           data={filteredBills}
           keyExtractor={(i) => i.id}
           renderItem={renderItem}
-          contentContainerStyle={{ paddingVertical: 8 }}
+          contentContainerStyle={{ paddingVertical: 8, paddingBottom: keyboardVisible ? 0 : (insets.bottom || 0) }}
           ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
         />
       </View>
+      </KeyboardAvoidingView>
 
       {/* Detail Modal */}
       <Modal visible={!!selected} animationType="slide" transparent>

@@ -3,17 +3,19 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   FlatList,
   TextInput,
   Alert,
   TouchableWithoutFeedback,
   Keyboard,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
+import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 
 interface ProductUnit {
   unitName: string;
@@ -247,6 +249,7 @@ const ProductItem = memo(({ item, onEdit, onDelete }: {
 
 const ProductsScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
   const [products, setProducts] = useState<Product[]>(productsDatabase);
   const [searchText, setSearchText] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Tất cả');
@@ -392,9 +395,10 @@ const ProductsScreen = () => {
   }), []);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['bottom','left','right']}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'height' : 'padding'} style={{ flex: 1 }}>
       <TouchableWithoutFeedback onPress={handleTapOutside}>
-      <View style={styles.content}>
+      <View style={styles.content} >
       
 
           {/* Search + Add in one row */}
@@ -474,12 +478,13 @@ const ProductsScreen = () => {
                 keyboardShouldPersistTaps="handled"
                 decelerationRate={0.992}
                 scrollEventThrottle={16}
-                contentContainerStyle={styles.productListContent}
+                contentContainerStyle={[styles.productListContent, { paddingBottom: isKeyboardVisible ? 0 : (insets.bottom || 0) }]}
               />
             )}
           </View>
       </View>
       </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -544,7 +549,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   categoriesContainer: {
-    backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
     marginBottom: 8,
     borderRadius: 8,

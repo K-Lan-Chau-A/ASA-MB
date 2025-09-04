@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Keyboard } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList, TabParamList } from '../types/navigation';
@@ -18,10 +18,24 @@ const Tab = createBottomTabNavigator<TabParamList>();
 
 const AddOrderButton = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const handleOrderPress = () => {
     navigation.navigate('Order');
   };
+
+  if (keyboardVisible) {
+    return null;
+  }
 
   return (
     <View style={styles.scanButtonContainer}>
@@ -43,6 +57,7 @@ const BottomNavigation = () => {
         screenOptions={({ route }) => ({
           tabBarActiveTintColor: '#009DA5',
           tabBarInactiveTintColor: '#757575',
+          tabBarHideOnKeyboard: true,
           tabBarStyle: {
             height: 65,
             paddingBottom: 10,

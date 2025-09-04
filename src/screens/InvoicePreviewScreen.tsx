@@ -34,7 +34,7 @@ interface InvoiceData {
 const InvoicePreviewScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'InvoicePreview'>>();
-  
+
   const { invoiceData } = route.params;
   const [copyCount, setCopyCount] = useState(1);
 
@@ -46,7 +46,7 @@ const InvoicePreviewScreen = () => {
     const ones = ['', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'];
     const tens = ['', '', 'hai mươi', 'ba mươi', 'bốn mươi', 'năm mươi', 'sáu mươi', 'bảy mươi', 'tám mươi', 'chín mươi'];
     const hundreds = ['', 'một trăm', 'hai trăm', 'ba trăm', 'bốn trăm', 'năm trăm', 'sáu trăm', 'bảy trăm', 'tám trăm', 'chín trăm'];
-    
+
     if (num === 0) return 'không';
     if (num < 10) return ones[num];
     if (num < 100) {
@@ -76,8 +76,8 @@ const InvoicePreviewScreen = () => {
       `Bạn muốn in ${copyCount} bản hóa đơn?`,
       [
         { text: 'Hủy', style: 'cancel' },
-        { 
-          text: 'In', 
+        {
+          text: 'In',
           onPress: () => {
             Alert.alert('Thành công', 'Đã gửi lệnh in hóa đơn!', [
               {
@@ -104,14 +104,12 @@ const InvoicePreviewScreen = () => {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Icon name="arrow-left" size={24} color="#000" />
+        <TouchableOpacity onPress={handleShare} style={styles.shareButton}>
+          <Icon name="share-variant" size={20} color="#666" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Xem trước</Text>
         <View style={styles.headerRight}>
-          <TouchableOpacity onPress={handleShare} style={styles.shareButton}>
-            <Icon name="share-variant" size={20} color="#666" />
-          </TouchableOpacity>
+
           <TouchableOpacity onPress={handlePrint} style={styles.printButton}>
             <Text style={styles.printButtonText}>In</Text>
           </TouchableOpacity>
@@ -122,14 +120,14 @@ const InvoicePreviewScreen = () => {
       <View style={styles.copyCountContainer}>
         <Text style={styles.copyCountLabel}>Số liên</Text>
         <View style={styles.copyCountControls}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.copyCountButton}
             onPress={() => setCopyCount(Math.max(1, copyCount - 1))}
           >
             <Text style={styles.copyCountButtonText}>-</Text>
           </TouchableOpacity>
           <Text style={styles.copyCountValue}>{copyCount}</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.copyCountButton}
             onPress={() => setCopyCount(copyCount + 1)}
           >
@@ -177,7 +175,7 @@ const InvoicePreviewScreen = () => {
             <View key={product.id} style={styles.productItem}>
               <View style={styles.productNameContainer}>
                 <Text style={styles.productName}>{product.name}</Text>
-                <Text style={styles.productPrice}>{formatCurrency(product.price)}</Text>
+                <Text style={styles.productPrice}>{`${formatCurrency(product.price)} / ${product.selectedUnit}`}</Text>
               </View>
               <Text style={styles.productQuantity}>{product.quantity}</Text>
               <Text style={styles.productAmount}>{formatCurrency(product.price * product.quantity)}</Text>

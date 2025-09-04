@@ -235,8 +235,7 @@ const ConfirmOrderScreen = () => {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => {
-            clearGlobalOrderState();
-            navigation.navigate('MainApp');
+            navigation.goBack();
           }}>
             <Icon name="arrow-left" size={24} color="#000" />
           </TouchableOpacity>
