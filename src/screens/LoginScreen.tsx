@@ -12,17 +12,21 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types/navigation';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import API_URL from '../config/api';
 
 const LoginScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isEmulator, setIsEmulator] = useState<boolean | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const { fcmToken, loading } = useFCMToken();
 
   useEffect(() => {
@@ -53,55 +57,40 @@ const LoginScreen = () => {
   }, []);
 
   const handleLogin = async () => {
-    console.log('🚀 Login button pressed');
-    console.log('🚀 Current fcmToken:', fcmToken);
-    console.log('🚀 Loading state:', loading);
-    console.log('🚀 Is emulator:', isEmulator);
-    
+    if (!username || !password) {
+      Alert.alert('Lỗi', 'Vui lòng nhập tên đăng nhập và mật khẩu.');
+      return;
+    }
+
+    setIsLoading(true);
+
     try {
-      // Skip FCM validation if running on emulator
-      if (isEmulator === true) {
-        console.log('🚀 Running on emulator - skipping FCM token validation');
-        // Proceed directly to main app on emulator
+      const response = await fetch(`${API_URL}/api/authentication/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username,
+          password,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
         navigation.reset({
           index: 0,
           routes: [{ name: 'MainApp' }],
         });
-        return;
+      } else {
+        const errorMessage = result.message === 'Invalid Username or Password' ? 'Sai tên đăng nhập hoặc mật khẩu' : result.message;
+        Alert.alert('Lỗi', errorMessage);
       }
-      
-      // FCM logic only for real devices
-      if (isEmulator === false) {
-        if (loading) {
-          console.log('🚀 Waiting for FCM token...');
-          Alert.alert('Thông báo', 'Đang khởi tạo kết nối với máy chủ...');
-          return;
-        }
-        
-        // Thử lấy token mới nếu chưa có
-        if (!fcmToken) {
-          console.log('🚀 No FCM token available, trying to get new one...');
-          const newToken = await fcmService.getFCMToken();
-          console.log('🚀 New token from service:', newToken);
-          
-          if (!newToken) {
-            console.error('🚀 FCM token not available');
-            Alert.alert('Lỗi', 'Không thể kết nối với máy chủ. Vui lòng thử lại sau.');
-            return;
-          }
-        }
-
-        console.log('🚀 Final FCM token for login:', fcmToken);
-      }
-
-      // Chuyển đến màn hình chính với bottom navigation
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'MainApp' }],
-      });
     } catch (error) {
-      console.error('🚀 Login error:', error);
-      // Hiển thị thông báo lỗi cho người dùng
+      Alert.alert('Lỗi', 'Đã xảy ra lỗi. Vui lòng thử lại sau.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -120,8 +109,6 @@ const LoginScreen = () => {
         </View>
 
         <View style={styles.formContainer}>
-          
-
           <TextInput
             style={styles.input}
             placeholder="Tên đăng nhập"
@@ -129,17 +116,16 @@ const LoginScreen = () => {
             onChangeText={setUsername}
             autoCapitalize="none"
           />
-          
           <View style={styles.passwordContainer}>
             <TextInput
               style={styles.input}
               placeholder="Mật khẩu"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry
+              secureTextEntry={!showPassword}
             />
-            <TouchableOpacity style={styles.eyeIcon}>
-              <Text>👁</Text>
+            <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}>
+              <Icon name={showPassword ? 'eye-off' : 'eye'} size={20} color="#666" />
             </TouchableOpacity>
           </View>
 
@@ -156,8 +142,13 @@ const LoginScreen = () => {
           <TouchableOpacity 
             style={styles.loginButton}
             onPress={handleLogin}
+            disabled={isLoading} // Disable button when loading
           >
-            <Text style={styles.loginButtonText}>Đăng nhập</Text>
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.loginButtonText}>Đăng nhập</Text>
+            )}
           </TouchableOpacity>
         </View>
 

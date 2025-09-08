@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, ScrollView, 
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { Picker } from '@react-native-picker/picker';
 
 interface BillItem {
   id: string;
@@ -24,6 +25,13 @@ const BillsScreen = () => {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'cancel'>('all');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [selectedShift, setSelectedShift] = useState('7h-15h');
+
+  const shifts = [
+    { label: 'Ca 7h-15h 2/7/2025', value: '7h-15h' },
+    { label: 'Ca 15h-23h 2/7/2025', value: '15h-23h' },
+    { label: 'Ca 23h-7h 3/7/2025', value: '23h-7h' },
+  ];
 
   const bills = useMemo<BillItem[]>(() => ([
     {
@@ -50,6 +58,126 @@ const BillsScreen = () => {
       paymentMethod: 'bank_transfer',
       products: [
         { name: 'Cà phê đen', qty: 2, price: 18000, unit: 'Ly' },
+      ],
+    },
+    {
+      id: '3',
+      code: '#124',
+      status: 'success',
+      buyer: 'Khách lẻ',
+      time: '14:00, 2 tháng 7, 2025',
+      total: 50000,
+      paymentMethod: 'nfc',
+      products: [
+        { name: 'Bánh mì', qty: 1, price: 50000, unit: 'Ổ' },
+      ],
+    },
+    {
+      id: '4',
+      code: '#125',
+      status: 'cancel',
+      buyer: 'Khách lẻ',
+      time: '15:30, 2 tháng 7, 2025',
+      total: 20000,
+      paymentMethod: 'cash',
+      products: [
+        { name: 'Nước suối', qty: 2, price: 10000, unit: 'Chai' },
+      ],
+    },
+    {
+      id: '5',
+      code: '#126',
+      status: 'success',
+      buyer: 'Khách lẻ',
+      time: '16:00, 2 tháng 7, 2025',
+      total: 75000,
+      paymentMethod: 'bank_transfer',
+      products: [
+        { name: 'Trà sữa', qty: 3, price: 25000, unit: 'Ly' },
+      ],
+    },
+    {
+      id: '6',
+      code: '#127',
+      status: 'success',
+      buyer: 'Khách lẻ',
+      time: '17:00, 2 tháng 7, 2025',
+      total: 30000,
+      paymentMethod: 'cash',
+      products: [
+        { name: 'Bánh ngọt', qty: 2, price: 15000, unit: 'Cái' },
+      ],
+    },
+    {
+      id: '7',
+      code: '#128',
+      status: 'cancel',
+      buyer: 'Khách lẻ',
+      time: '18:00, 2 tháng 7, 2025',
+      total: 45000,
+      paymentMethod: 'nfc',
+      products: [
+        { name: 'Kem', qty: 3, price: 15000, unit: 'Cây' },
+      ],
+    },
+    {
+      id: '8',
+      code: '#129',
+      status: 'success',
+      buyer: 'Khách lẻ',
+      time: '19:00, 2 tháng 7, 2025',
+      total: 60000,
+      paymentMethod: 'bank_transfer',
+      products: [
+        { name: 'Sữa chua', qty: 4, price: 15000, unit: 'Hũ' },
+      ],
+    },
+    {
+      id: '9',
+      code: '#130',
+      status: 'success',
+      buyer: 'Khách lẻ',
+      time: '20:00, 2 tháng 7, 2025',
+      total: 100000,
+      paymentMethod: 'cash',
+      products: [
+        { name: 'Pizza', qty: 1, price: 100000, unit: 'Cái' },
+      ],
+    },
+    {
+      id: '10',
+      code: '#131',
+      status: 'cancel',
+      buyer: 'Khách lẻ',
+      time: '21:00, 2 tháng 7, 2025',
+      total: 30000,
+      paymentMethod: 'nfc',
+      products: [
+        { name: 'Bánh bao', qty: 3, price: 10000, unit: 'Cái' },
+      ],
+    },
+    {
+      id: '11',
+      code: '#132',
+      status: 'success',
+      buyer: 'Khách lẻ',
+      time: '22:00, 2 tháng 7, 2025',
+      total: 80000,
+      paymentMethod: 'bank_transfer',
+      products: [
+        { name: 'Bún bò', qty: 2, price: 40000, unit: 'Tô' },
+      ],
+    },
+    {
+      id: '12',
+      code: '#133',
+      status: 'success',
+      buyer: 'Khách lẻ',
+      time: '23:00, 2 tháng 7, 2025',
+      total: 50000,
+      paymentMethod: 'cash',
+      products: [
+        { name: 'Phở', qty: 1, price: 50000, unit: 'Tô' },
       ],
     },
   ]), []);
@@ -91,6 +219,36 @@ const BillsScreen = () => {
     });
     return list;
   }, [bills, query, statusFilter, sortOrder]);
+
+  const shiftBills = useMemo(() => {
+    return filteredBills.filter(bill => {
+      const billTime = parseVietnameseDate(bill.time);
+      let shiftStart, shiftEnd;
+      switch (selectedShift) {
+        case '7h-15h':
+          shiftStart = new Date(2025, 6, 2, 7).getTime();
+          shiftEnd = new Date(2025, 6, 2, 15).getTime();
+          break;
+        case '15h-23h':
+          shiftStart = new Date(2025, 6, 2, 15).getTime();
+          shiftEnd = new Date(2025, 6, 2, 23).getTime();
+          break;
+        case '23h-7h':
+          shiftStart = new Date(2025, 6, 2, 23).getTime();
+          shiftEnd = new Date(2025, 6, 3, 7).getTime();
+          break;
+        default:
+          return false;
+      }
+      return billTime >= shiftStart && billTime < shiftEnd;
+    });
+  }, [filteredBills, selectedShift]);
+
+  const totalRevenue = useMemo(() => {
+    return shiftBills.reduce((sum, bill) => sum + bill.total, 0);
+  }, [shiftBills]);
+
+  const totalOrders = shiftBills.length;
 
   // Hide bottom navigation when keyboard is open and track visibility
   useEffect(() => {
@@ -175,8 +333,25 @@ const BillsScreen = () => {
           ))}
         </View>
 
+        <View style={styles.shiftContainer}>
+          <Picker
+            selectedValue={selectedShift}
+            onValueChange={(itemValue) => setSelectedShift(itemValue)}
+            style={styles.picker}
+          >
+            {shifts.map(shift => (
+              <Picker.Item key={shift.value} label={shift.label} value={shift.value} />
+            ))}
+          </Picker>
+        </View>
+
+        <View style={styles.statisticsContainer}>
+          <Text style={styles.statisticsText}>Doanh thu: {totalRevenue.toLocaleString('vi-VN')} VNĐ</Text>
+          <Text style={styles.statisticsText}>Tổng đơn hàng: {totalOrders}</Text>
+        </View>
+
         <FlatList
-          data={filteredBills}
+          data={shiftBills}
           keyExtractor={(i) => i.id}
           renderItem={renderItem}
           contentContainerStyle={{ paddingVertical: 8, paddingBottom: keyboardVisible ? 0 : (insets.bottom || 0) }}
@@ -257,7 +432,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   content: {
-    padding: 16,
+    padding: 15,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -267,7 +442,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E5E5E5',
-    marginBottom: 10,
+    marginBottom: 5,
     height: 45,
     justifyContent: 'flex-start',
   },
@@ -281,7 +456,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
-    marginBottom: 10,
+    marginBottom: 1,
   },
   sortButton: {
     alignItems: 'center',
@@ -296,7 +471,7 @@ const styles = StyleSheet.create({
   filterRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 10,
+    marginBottom: 1,
   },
   filterChip: {
     paddingHorizontal: 12,
@@ -322,7 +497,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 1,
   },
   header: {
     padding: 16,
@@ -364,6 +539,23 @@ const styles = StyleSheet.create({
   totalLabel: { fontSize: 14, color: '#000' },
   totalValue: { fontSize: 16, fontWeight: 'bold', color: '#000' },
   discountReason: { fontSize: 12, color: '#999', fontStyle: 'italic', marginTop: 4 },
+  shiftContainer: {
+    marginBottom: 10,
+  },
+  picker: {
+    height: 50,
+    width: '100%',
+  },
+  statisticsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  statisticsText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#000',
+  }
 });
 
 export default BillsScreen;

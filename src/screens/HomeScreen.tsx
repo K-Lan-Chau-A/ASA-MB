@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView, Dimensions } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { LineChart, BarChart } from 'react-native-chart-kit';
 
 const HomeScreen = () => {
   const [hideMoney, setHideMoney] = useState(true);
@@ -13,6 +14,45 @@ const HomeScreen = () => {
   };
 
   // Removed charts: keep only summary cards
+
+  const screenWidth = Dimensions.get('window').width;
+
+  const chartConfig = {
+    backgroundGradientFrom: '#fff',
+    backgroundGradientTo: '#fff',
+    color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+    strokeWidth: 2,
+    barPercentage: 0.5,
+    decimalPlaces: 0,
+    labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+    style: {
+      borderRadius: 16,
+    },
+    propsForLabels: {
+      fontSize: 12,
+      rotation: 0,
+    },
+    propsForBackgroundLines: {
+      strokeDasharray: '',
+    },
+    fillShadowGradient: '#009DA5',
+    fillShadowGradientOpacity: 1, // Use solid color
+  };
+
+  const data = {
+    labels: ['Bánh gạo', 'Cà phê', 'Nước suối', 'Mì gói'],
+    datasets: [
+      {
+        data: [20, 45, 78, 80],
+        colors: [
+          (opacity = 1) => `rgba(0, 157, 165, ${opacity})`,
+          (opacity = 1) => `rgba(0, 157, 165, ${opacity})`,
+          (opacity = 1) => `rgba(0, 157, 165, ${opacity})`,
+          (opacity = 1) => `rgba(0, 157, 165, ${opacity})`,
+        ],
+      },
+    ],
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -43,9 +83,19 @@ const HomeScreen = () => {
           </View>
         </View>
 
-    
+        {/* Top-selling items chart */}
+        <BarChart
+          style={styles.chart}
+          data={data}
+          width={screenWidth - 32}
+          height={220}
+          chartConfig={chartConfig}
+          verticalLabelRotation={0}
+          yAxisLabel=""
+          yAxisSuffix=""
+          fromZero={true}
+        />
 
-        {/* (Charts removed as requested) */}
       </ScrollView>
     </SafeAreaView>
   );
@@ -122,32 +172,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  chartHeader: { flexDirection: 'row', gap: 16, marginBottom: 10 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#2E86DE' },
-  legendText: { fontSize: 12, color: '#666' },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#000', marginBottom: 12 },
-  statsCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  statsTitle: {
-    fontSize: 16,
-    color: '#666666',
-    marginBottom: 8,
-  },
-  statsNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#000000',
-  },
+  chart: {
+    marginVertical: 8,
+    borderRadius: 16,
+  }
 });
 
 export default HomeScreen;
