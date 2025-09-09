@@ -15,6 +15,7 @@ import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navig
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
 import { clearGlobalOrderState } from './OrderScreen';
+import { Picker } from '@react-native-picker/picker';
 
 interface Product {
   id: string;
@@ -52,6 +53,8 @@ const ConfirmOrderScreen = () => {
   const [showQRModal, setShowQRModal] = useState(false);
   const [showNFCModal, setShowNFCModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  const [availablePromoCodes] = useState(['GIAM10', 'GIAM50K', 'WELCOME']);
 
   const calculateDiscount = useCallback(() => {
     if (!discountPercentage) return 0;
@@ -281,13 +284,16 @@ const ConfirmOrderScreen = () => {
               <Text style={styles.promoTitle}>Mã khuyến mãi</Text>
             </View>
             <View style={styles.discountRow}>
-              <TextInput
+              <Picker
+                selectedValue={promoCode}
                 style={styles.promoInput}
-                placeholder="Nhập mã khuyến mãi"
-                value={promoCode}
-                onChangeText={setPromoCode}
-                placeholderTextColor="#999"
-              />
+                onValueChange={(itemValue: string) => setPromoCode(itemValue)}
+              >
+                <Picker.Item label="Chọn mã khuyến mãi" value="" />
+                {availablePromoCodes.map((code) => (
+                  <Picker.Item key={code} label={code} value={code} />
+                ))}
+              </Picker>
               <TouchableOpacity style={styles.applyButton} onPress={handleApplyPromoCode}>
                 <Text style={styles.applyButtonText}>Áp dụng</Text>
               </TouchableOpacity>

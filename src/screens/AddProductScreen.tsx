@@ -9,6 +9,7 @@ import {
   ScrollView,
   Alert,
   Image,
+  Modal,
 } from 'react-native';
 import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -68,6 +69,10 @@ const AddProductScreen = () => {
 
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showUnitDropdown, setShowUnitDropdown] = useState(false);
+  const [baseUnit, setBaseUnit] = useState('');
+const [additionalUnits, setAdditionalUnits] = useState<Array<{ unitName: string; conversionRate: number }>>([]);
+const [showUnitModal, setShowUnitModal] = useState(false);
+const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
 
   const updateProduct = useCallback((field: keyof NewProduct, value: string) => {
     setProduct(prev => ({ ...prev, [field]: value }));
@@ -281,9 +286,113 @@ const AddProductScreen = () => {
             </View>
           </View>
 
-          {/* Single Row */}
+          {/* Base Unit and Additional Units */}
           <View style={styles.rowContainer}>
-            <View style={[styles.fieldContainer, styles.oneThirdWidth]}>
+            <View style={[styles.fieldContainer, styles.halfWidth]}>
+              <Text style={styles.label}>Đơn vị gốc <Text style={styles.requiredStar}>*</Text></Text>
+              <TouchableOpacity 
+                style={styles.dropdownInput}
+                onPress={() => setShowUnitModal(true)}
+              >
+                <Text style={[
+                  styles.dropdownText,
+                  !baseUnit && styles.dropdownPlaceholder
+                ]}>
+                  {baseUnit || 'Chọn đơn vị gốc'}
+                </Text>
+                <Icon name="chevron-down" size={20} color="#666" />
+              </TouchableOpacity>
+              
+              <Modal
+                visible={showUnitModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowUnitModal(false)}
+              >
+                <View style={styles.modalOverlay}>
+                  <View style={styles.modalContainerSmall}>
+                    <View style={styles.modalHeader}>
+                      <Text style={styles.modalTitle}>Chọn đơn vị gốc</Text>
+                      <TouchableOpacity onPress={() => setShowUnitModal(false)} style={styles.closeButton}>
+                        <Icon name="close" size={24} color="#666" />
+                      </TouchableOpacity>
+                    </View>
+                    <ScrollView style={styles.modalContent}>
+                      {units.map((unit) => (
+                        <TouchableOpacity
+                          key={unit}
+                          style={[
+                            styles.dropdownItem,
+                            baseUnit === unit && styles.dropdownItemSelected
+                          ]}
+                          onPress={() => {
+                            setBaseUnit(unit);
+                            setShowUnitModal(false);
+                          }}
+                        >
+                          <Text style={[
+                            styles.dropdownItemText,
+                            baseUnit === unit && styles.dropdownItemTextSelected
+                          ]}>
+                            {unit}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                </View>
+              </Modal>
+            </View>
+          </View>
+
+          {/* Additional Units */}
+          <View style={styles.fieldContainer}>
+            <Text style={styles.label}>Thêm đơn vị</Text>
+            {additionalUnits.map((unit, index) => (
+              <View key={index} style={styles.unitRow}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Tên đơn vị"
+                  value={unit.unitName}
+                  onChangeText={(text) => {
+                    const newUnits = [...additionalUnits];
+                    newUnits[index].unitName = text;
+                    setAdditionalUnits(newUnits);
+                  }}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Tỉ lệ chuyển đổi"
+                  value={unit.conversionRate.toString()}
+                  onChangeText={(text) => {
+                    const newUnits = [...additionalUnits];
+                    newUnits[index].conversionRate = parseFloat(text) || 0;
+                    setAdditionalUnits(newUnits);
+                  }}
+                  keyboardType="numeric"
+                />
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={() => {
+                    const newUnits = additionalUnits.filter((_, i) => i !== index);
+                    setAdditionalUnits(newUnits);
+                  }}
+                >
+                  <Icon name="close" size={20} color="#FF0000" />
+                </TouchableOpacity>
+              </View>
+            ))}
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => setAdditionalUnits([...additionalUnits, { unitName: '', conversionRate: 0 }])}
+            >
+              <Text style={styles.addButtonText}>Thêm đơn vị mới</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Quantity and Discount */}
+          <View style={styles.rowContainer}>
+            <View style={[styles.fieldContainer, styles.halfWidth]}>
               <Text style={styles.label}>Số lượng <Text style={styles.requiredStar}>*</Text></Text>
               <TextInput
                 style={styles.input}
@@ -294,53 +403,20 @@ const AddProductScreen = () => {
               />
             </View>
 
-            <View style={[styles.fieldContainer, styles.oneThirdWidth]}>
-              <Text style={styles.label}>Đơn vị <Text style={styles.requiredStar}>*</Text></Text>
-              <TouchableOpacity 
-                style={styles.dropdownInput}
-                onPress={() => setShowUnitDropdown(!showUnitDropdown)}
-              >
-                <Text style={[
-                  styles.dropdownText,
-                  !product.unit && styles.dropdownPlaceholder
-                ]}>
-                  {product.unit || 'Đơn vị'}
-                </Text>
-                <Icon name="chevron-down" size={20} color="#666" />
-              </TouchableOpacity>
-              
-              {showUnitDropdown && (
-                <View style={styles.dropdown}>
-                  {units.map((unit) => (
-                    <TouchableOpacity
-                      key={unit}
-                      style={[
-                        styles.dropdownItem,
-                        product.unit === unit && styles.dropdownItemSelected
-                      ]}
-                      onPress={() => {
-                        updateProduct('unit', unit);
-                        setShowUnitDropdown(false);
-                      }}
-                    >
-                      <Text style={[
-                        styles.dropdownItemText,
-                        product.unit === unit && styles.dropdownItemTextSelected
-                      ]}>
-                        {unit}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-
-            <View style={[styles.fieldContainer, styles.oneThirdWidth]}>
+            <View style={[styles.fieldContainer, styles.halfWidth]}>
               <Text style={styles.label}>Giảm giá</Text>
-              <TouchableOpacity style={styles.dropdownInput}>
-                <Text style={styles.dropdownPlaceholder}>0%</Text>
-                <Icon name="chevron-down" size={20} color="#666" />
-              </TouchableOpacity>
+              <TextInput
+                style={styles.input}
+                value={product.discount}
+                onChangeText={(text) => {
+                  const value = parseInt(text) || 0;
+                  if (value >= 0 && value <= 100) {
+                    updateProduct('discount', value.toString());
+                  }
+                }}
+                placeholder="0"
+                keyboardType="numeric"
+              />
             </View>
           </View>
         </View>
@@ -519,6 +595,81 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FFFFFF',
     fontWeight: 'bold',
+  },
+  unitRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 8,
+  },
+  addButton: {
+    backgroundColor: '#E0E0E0',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  addButtonText: {
+    fontSize: 14,
+    color: '#000',
+    fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    width: '90%',
+    maxHeight: '80%',
+    padding: 16,
+    alignItems: 'center',
+  },
+  modalContainerSmall: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    width: '80%',
+    maxHeight: '60%',
+    padding: 16,
+    alignItems: 'center',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  modalContent: {
+    width: '100%',
+  },
+  addButtonCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#009DA5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+    marginTop: 30,
+  },
+  deleteButton: {
+    marginLeft: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: -5,
+    right: -70,
   },
 });
 
