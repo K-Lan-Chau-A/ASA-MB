@@ -16,6 +16,8 @@ import { useNavigation, NavigationProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
+import API_URL from '../config/api';
+import { getShopId, getAuthToken } from '../services/AuthStore';
 
 interface ProductUnit {
   unitName: string;
@@ -32,138 +34,11 @@ interface Product {
   units: ProductUnit[];
   selectedUnit: string;
   category?: string;
-  stock?: number;
+  quantity?: number;
   lastUpdated?: string;
 }
 
-// Sample products database (normally would come from API)
-const productsDatabase = [
-  { 
-    id: '1', 
-    name: 'Coca Cola', 
-    price: 15000, 
-    barcode: '1234567890123',
-    category: 'Đồ uống',
-    stock: 50,
-    lastUpdated: '2024-01-15',
-    units: [
-      { unitName: 'Chai', price: 15000, quantityInBaseUnit: 1, isBaseUnit: true },
-      { unitName: 'Lốc (6 chai)', price: 85000, quantityInBaseUnit: 6, isBaseUnit: false },
-      { unitName: 'Thùng (24 chai)', price: 330000, quantityInBaseUnit: 24, isBaseUnit: false }
-    ],
-    selectedUnit: 'Chai'
-  },
-  { 
-    id: '2', 
-    name: 'Pepsi Cola', 
-    price: 14000, 
-    barcode: '2345678901234',
-    category: 'Đồ uống',
-    stock: 45,
-    lastUpdated: '2024-01-14',
-    units: [
-      { unitName: 'Chai', price: 14000, quantityInBaseUnit: 1, isBaseUnit: true },
-      { unitName: 'Lốc (6 chai)', price: 80000, quantityInBaseUnit: 6, isBaseUnit: false },
-      { unitName: 'Thùng (24 chai)', price: 310000, quantityInBaseUnit: 24, isBaseUnit: false }
-    ],
-    selectedUnit: 'Chai'
-  },
-  { 
-    id: '3', 
-    name: 'Nước suối Aquafina', 
-    price: 8000, 
-    barcode: '8934588063053',
-    category: 'Đồ uống',
-    stock: 100,
-    lastUpdated: '2024-01-16',
-    units: [
-      { unitName: 'Chai', price: 8000, quantityInBaseUnit: 1, isBaseUnit: true },
-      { unitName: 'Lốc (12 chai)', price: 90000, quantityInBaseUnit: 12, isBaseUnit: false },
-      { unitName: 'Thùng (24 chai)', price: 175000, quantityInBaseUnit: 24, isBaseUnit: false }
-    ],
-    selectedUnit: 'Chai'
-  },
-  { 
-    id: '4', 
-    name: 'Bánh mì thịt nướng', 
-    price: 25000, 
-    barcode: '4567890123456',
-    category: 'Thực phẩm',
-    stock: 20,
-    lastUpdated: '2024-01-16',
-    units: [
-      { unitName: 'Cái', price: 25000, quantityInBaseUnit: 1, isBaseUnit: true }
-    ],
-    selectedUnit: 'Cái'
-  },
-  { 
-    id: '5', 
-    name: 'Cà phê đen', 
-    price: 18000, 
-    barcode: '5678901234567',
-    category: 'Đồ uống',
-    stock: 30,
-    lastUpdated: '2024-01-15',
-    units: [
-      { unitName: 'Ly', price: 18000, quantityInBaseUnit: 1, isBaseUnit: true }
-    ],
-    selectedUnit: 'Ly'
-  },
-  { 
-    id: '6', 
-    name: 'Trà sữa trân châu', 
-    price: 35000, 
-    barcode: '6789012345678',
-    category: 'Đồ uống',
-    stock: 25,
-    lastUpdated: '2024-01-14',
-    units: [
-      { unitName: 'Ly', price: 35000, quantityInBaseUnit: 1, isBaseUnit: true }
-    ],
-    selectedUnit: 'Ly'
-  },
-  { 
-    id: '7', 
-    name: 'Bánh bao nhân thịt', 
-    price: 12000, 
-    barcode: '7890123456789',
-    category: 'Thực phẩm',
-    stock: 40,
-    lastUpdated: '2024-01-16',
-    units: [
-      { unitName: 'Cái', price: 12000, quantityInBaseUnit: 1, isBaseUnit: true },
-      { unitName: 'Khay (10 cái)', price: 110000, quantityInBaseUnit: 10, isBaseUnit: false }
-    ],
-    selectedUnit: 'Cái'
-  },
-  { 
-    id: '8', 
-    name: 'Nước cam ép', 
-    price: 22000, 
-    barcode: '8901234567890',
-    category: 'Đồ uống',
-    stock: 35,
-    lastUpdated: '2024-01-15',
-    units: [
-      { unitName: 'Ly', price: 22000, quantityInBaseUnit: 1, isBaseUnit: true }
-    ],
-    selectedUnit: 'Ly'
-  },
-  { 
-    id: '9', 
-    name: 'Nabati', 
-    price: 8000, 
-    barcode: '8993175535878',
-    category: 'Bánh kẹo',
-    stock: 60,
-    lastUpdated: '2024-01-14',
-    units: [
-      { unitName: 'Gói', price: 8000, quantityInBaseUnit: 1, isBaseUnit: true },
-      { unitName: 'Hộp (20 gói)', price: 150000, quantityInBaseUnit: 20, isBaseUnit: false }
-    ],
-    selectedUnit: 'Gói'
-  },
-];
+// Remote products will be loaded from API
 
 // Memoized ProductItem component
 const ProductItem = memo(({ item, onEdit, onDelete }: { 
@@ -173,14 +48,14 @@ const ProductItem = memo(({ item, onEdit, onDelete }: {
 }) => {
   const [showActions, setShowActions] = useState(false);
   
-  const getStockStatus = (stock?: number) => {
-    if (!stock) return { text: 'Không xác định', color: '#999' };
-    if (stock <= 5) return { text: `Còn ${stock}`, color: '#FF6B6B' };
-    if (stock <= 20) return { text: `Còn ${stock}`, color: '#FFA726' };
-    return { text: `Còn ${stock}`, color: '#4CAF50' };
+  const getStockStatus = (quantity?: number) => {
+    if (!quantity) return { text: 'Không xác định số lượng', color: '#999' };
+    if (quantity <= 5) return { text: `Còn ${quantity}`, color: '#FF6B6B' };
+    if (quantity <= 20) return { text: `Còn ${quantity}`, color: '#FFA726' };
+    return { text: `Còn ${quantity}`, color: '#4CAF50' };
   };
 
-  const stockStatus = getStockStatus(item.stock);
+  const stockStatus = getStockStatus(item.quantity);
 
   return (
     <View style={styles.productItem}>
@@ -250,7 +125,9 @@ const ProductItem = memo(({ item, onEdit, onDelete }: {
 const ProductsScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
-  const [products, setProducts] = useState<Product[]>(productsDatabase);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [searchText, setSearchText] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Tất cả');
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
@@ -307,6 +184,75 @@ const ProductsScreen = () => {
       keyboardDidHideListener?.remove();
     };
   }, []);
+
+  const loadProducts = useCallback(async (showLoader: boolean) => {
+    if (showLoader) setIsLoading(true);
+    try {
+      const shopId = (await getShopId()) ?? 0;
+      const token = await getAuthToken();
+      const url = `${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=100`;
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const data = await res.json();
+      const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+      let mapped: Product[] = items.map((p: any, idx: number) => ({
+        id: String(p.id ?? p.productId ?? idx + 1),
+        name: String(p.productName ?? p.name ?? 'Sản phẩm'),
+        price: Number(p.price ?? p.defaultPrice ?? 0),
+        barcode: p.barcode ? String(p.barcode) : undefined,
+        category: String(p.categoryName ?? p.category?.categoryName ?? ''),
+        quantity: typeof p.quantity === 'number' ? p.quantity : (typeof p.stock === 'number' ? p.stock : undefined),
+        lastUpdated: p.updateAt ? String(p.updateAt).slice(0, 10) : (p.updatedAt ? String(p.updatedAt).slice(0,10) : undefined),
+        units: [],
+        selectedUnit: 'Cái',
+      }));
+
+      // Enrich units by calling product-units per product (base unit has conversionFactor=1)
+      try {
+        const enriched = await Promise.all(
+          mapped.map(async (prod) => {
+            try {
+              const uRes = await fetch(`${API_URL}/api/product-units?ShopId=${shopId}&ProductId=${prod.id}&page=1&pageSize=50`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+              });
+              const uData = await uRes.json();
+              const arr: any[] = Array.isArray(uData?.items) ? uData.items : [];
+              if (arr.length > 0) {
+                const units = arr.map((u: any) => ({
+                  unitName: String(u.unitName ?? u.name ?? 'Cái'),
+                  price: Number(u.price ?? prod.price ?? 0),
+                  quantityInBaseUnit: Number(u.conversionFactor ?? 1),
+                  isBaseUnit: Number(u.conversionFactor ?? 1) === 1,
+                })).sort((a: any, b: any) => (a.quantityInBaseUnit || 1) - (b.quantityInBaseUnit || 1));
+                const base = units.find((u: any) => u.isBaseUnit) || units[0];
+                return { ...prod, units, price: base.price, selectedUnit: base.unitName };
+              }
+            } catch {}
+            // fallback keep original price and selectedUnit
+            return { ...prod, units: [{ unitName: 'Cái', price: prod.price, quantityInBaseUnit: 1, isBaseUnit: true }], selectedUnit: 'Cái' };
+          })
+        );
+        mapped = enriched;
+      } catch {}
+
+      setProducts(mapped);
+    } catch (e) {
+      // ignore
+    } finally {
+      if (showLoader) setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProducts(true);
+  }, [loadProducts]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadProducts(false);
+    setRefreshing(false);
+  }, [loadProducts]);
 
   const handleSearchChange = useCallback((text: string) => {
     setSearchText(text);
@@ -444,7 +390,11 @@ const ProductsScreen = () => {
 
           {/* Product List */}
           <View style={styles.productList}>
-            {filteredProducts.length === 0 ? (
+            {isLoading ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>Đang tải sản phẩm...</Text>
+              </View>
+            ) : filteredProducts.length === 0 ? (
               <View style={styles.emptyState}>
                 <Icon name="package-variant-closed" size={48} color="#ccc" />
                 <Text style={styles.emptyText}>
@@ -478,6 +428,8 @@ const ProductsScreen = () => {
                 keyboardShouldPersistTaps="handled"
                 decelerationRate={0.992}
                 scrollEventThrottle={16}
+                refreshing={refreshing}
+                onRefresh={onRefresh}
                 contentContainerStyle={[styles.productListContent, { paddingBottom: isKeyboardVisible ? 0 : (insets.bottom || 0) }]}
               />
             )}

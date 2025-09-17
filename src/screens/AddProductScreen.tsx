@@ -1,19 +1,22 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   TextInput,
   ScrollView,
   Alert,
   Image,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
+import API_URL from '../config/api';
+import { getShopId, getAuthToken } from '../services/AuthStore';
 
 interface NewProduct {
   barcode: string;
@@ -28,31 +31,23 @@ interface NewProduct {
   description?: string;
 }
 
-const categories = [
-  'Đồ uống',
-  'Thực phẩm',
-  'Bánh kẹo',
-  'Khác'
-];
+type Category = {
+  categoryId: number;
+  categoryName: string;
+};
 
 const units = [
   'Cái',
+  'Lon',
   'Chai',
   'Gói',
-  'Hộp',
-  'Thùng',
-  'Kg',
-  'Gram',
-  'Lít',
-  'Ml',
-  'Ly',
-  'Túi',
-  'Khác'
+  'Hộp, ...',
 ];
 
 const AddProductScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'AddProduct'>>();
+  const [shopId, setShopId] = useState<number>(0);
   
   const [product, setProduct] = useState<NewProduct>({
     barcode: route.params?.barcode || '',
@@ -68,11 +63,18 @@ const AddProductScreen = () => {
   });
 
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
   const [showUnitDropdown, setShowUnitDropdown] = useState(false);
   const [baseUnit, setBaseUnit] = useState('');
 const [additionalUnits, setAdditionalUnits] = useState<Array<{ unitName: string; conversionRate: number }>>([]);
-const [showUnitModal, setShowUnitModal] = useState(false);
 const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
+  const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryDesc, setNewCategoryDesc] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
 
   const updateProduct = useCallback((field: keyof NewProduct, value: string) => {
     setProduct(prev => ({ ...prev, [field]: value }));
@@ -93,6 +95,87 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
     // TODO: Implement image picker
     Alert.alert('Thông báo', 'Tính năng thêm ảnh sẽ được triển khai sau');
   }, []);
+
+  // Load shopId and fetch categories
+  useEffect(() => {
+    const fetchAll = async () => {
+      setLoadingCategories(true);
+      setCategoryError(null);
+      try {
+        const loadedShopId = (await getShopId()) ?? 0;
+        setShopId(loadedShopId);
+        const token = await getAuthToken();
+        // Try with capitalized ShopId like other endpoints
+        let res = await fetch(`${API_URL}/api/categories?ShopId=${loadedShopId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        let data = await res.json();
+        let arr: any[] | null = null;
+        if (Array.isArray(data)) arr = data;
+        else if (Array.isArray(data?.items)) arr = data.items;
+        // If empty or null, fallback to lowercase shopId param for compatibility
+        if (!arr || arr.length === 0) {
+          res = await fetch(`${API_URL}/api/categories?shopId=${loadedShopId}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
+          data = await res.json();
+          if (Array.isArray(data)) arr = data; else if (Array.isArray(data?.items)) arr = data.items; else arr = [];
+        }
+        setCategories(
+          (arr || [])
+            .filter((c: any) => typeof c?.categoryId === 'number' && typeof c?.categoryName === 'string')
+            .map((c: any) => ({ categoryId: c.categoryId, categoryName: c.categoryName }))
+        );
+      } catch (e) {
+        setCategoryError('Không tải được danh mục');
+      } finally {
+        setLoadingCategories(false);
+      }
+    };
+    fetchAll();
+  }, []);
+
+
+  const handleCreateCategory = useCallback(async () => {
+    if (!newCategoryName.trim()) {
+      Alert.alert('Lỗi', 'Vui lòng nhập tên nhóm hàng');
+      return;
+    }
+    try {
+      setIsCreatingCategory(true);
+      const token = await getAuthToken();
+      const payload = { categoryName: newCategoryName.trim(), description: newCategoryDesc.trim(), shopId: shopId };
+      const res = await fetch(`${API_URL}/api/categories`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data?.message || 'Tạo nhóm hàng thất bại';
+        Alert.alert('Lỗi', msg);
+        return;
+      }
+      // Append to list and select it
+      const created: Category = {
+        categoryId: data?.categoryId ?? (Math.max(0, ...categories.map(c => c.categoryId)) + 1),
+        categoryName: data?.categoryName ?? newCategoryName.trim(),
+      };
+      setCategories(prev => [...prev, created]);
+      updateProduct('category', created.categoryName);
+      setShowCreateCategoryModal(false);
+      setShowCategoryDropdown(false);
+      setNewCategoryName('');
+      setNewCategoryDesc('');
+    } catch (e) {
+      Alert.alert('Lỗi', 'Không thể tạo nhóm hàng. Vui lòng thử lại.');
+    } finally {
+      setIsCreatingCategory(false);
+    }
+  }, [newCategoryName, newCategoryDesc, shopId, categories, updateProduct]);
 
   const handleScanBarcode = useCallback(() => {
     // Điều hướng tới màn hình quét mã, giống OrderScreen
@@ -116,8 +199,8 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
       return;
     }
 
-    if (!product.unit.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng chọn đơn vị');
+    if (!baseUnit.trim()) {
+      Alert.alert('Lỗi', 'Vui lòng chọn đơn vị gốc');
       return;
     }
 
@@ -141,24 +224,86 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
     saveProduct(sellPrice, importPrice);
   }, [product, navigation]);
 
-  const saveProduct = useCallback((sellPrice: number, importPrice: number) => {
-    // TODO: Save product to database
-    console.log('Saving product:', { ...product, sellPrice, importPrice });
-    
-    Alert.alert(
-      'Thành công', 
-      'Sản phẩm đã được thêm thành công!',
-      [
+  const saveProduct = useCallback(async (sellPrice: number, importPrice: number) => {
+    try {
+      setIsSaving(true);
+      // Build payload per API contract
+      const matchedCategory = categories.find((c) => c.categoryName === product.category);
+      const categoryId = matchedCategory ? matchedCategory.categoryId : 0;
+
+      const parsedDiscount = Math.max(0, Math.min(100, parseInt(product.discount || '0', 10) || 0));
+      const parsedQuantity = parseInt(product.quantity || '0', 10) || 0;
+
+      const baseUnitName = (baseUnit || 'Cái').trim();
+      const unitsPayload = [
         {
-          text: 'OK',
-          onPress: () => {
-            // Navigate back to ProductsScreen
-            navigation.goBack();
-          }
-        }
-      ]
-    );
-  }, [product, navigation]);
+          name: baseUnitName,
+          conversionFactor: 1,
+          price: sellPrice,
+          isBaseUnit: true,
+        },
+        ...additionalUnits
+          .filter(u => (u.unitName || '').trim() !== '' && (u.conversionRate || 0) > 0)
+          .map(u => ({
+            name: u.unitName.trim(),
+            conversionFactor: u.conversionRate,
+            price: Math.round(sellPrice * (u.conversionRate || 1)),
+            isBaseUnit: false,
+          })),
+      ];
+
+      const payload = {
+        shopId: shopId,
+        productName: product.name.trim(),
+        barcode: product.barcode.trim(),
+        categoryId,
+        imageUrl: product.image || '',
+        price: sellPrice,
+        discount: parsedDiscount,
+        status: 1,
+        units: unitsPayload,
+        inventoryTransaction: {
+          quantity: parsedQuantity,
+          price: importPrice,
+          imageUrl: product.image || '',
+        },
+      };
+
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}/api/products`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = result?.message || 'Không thể tạo sản phẩm';
+        Alert.alert('Lỗi', msg);
+        return;
+      }
+
+      Alert.alert(
+        'Thành công',
+        'Sản phẩm đã được thêm thành công!',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.goBack();
+            },
+          },
+        ]
+      );
+    } catch (e) {
+      Alert.alert('Lỗi', 'Không thể kết nối máy chủ. Vui lòng thử lại.');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [product, baseUnit, additionalUnits, navigation]);
 
   const handleCancel = useCallback(() => {
     // Simply go back without adding any product
@@ -167,7 +312,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
   }, [navigation]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top','bottom','left','right']}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleCancel}>
@@ -237,29 +382,87 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
             
             {showCategoryDropdown && (
               <View style={styles.dropdown}>
-                {categories.map((category) => (
+                {loadingCategories && (
+                  <View style={{ padding: 12 }}>
+                    <Text style={{ color: '#666' }}>Đang tải nhóm hàng...</Text>
+                  </View>
+                )}
+                {!loadingCategories && categories.map((category) => (
                   <TouchableOpacity
-                    key={category}
+                    key={category.categoryId}
                     style={[
                       styles.dropdownItem,
-                      product.category === category && styles.dropdownItemSelected
+                      product.category === category.categoryName && styles.dropdownItemSelected
                     ]}
                     onPress={() => {
-                      updateProduct('category', category);
+                      updateProduct('category', category.categoryName);
                       setShowCategoryDropdown(false);
                     }}
                   >
                     <Text style={[
                       styles.dropdownItemText,
-                      product.category === category && styles.dropdownItemTextSelected
+                      product.category === category.categoryName && styles.dropdownItemTextSelected
                     ]}>
-                      {category}
+                      {category.categoryName}
                     </Text>
                   </TouchableOpacity>
                 ))}
+                {!!categoryError && (
+                  <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
+                    <Text style={{ color: '#E53935' }}>{categoryError}</Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={[styles.dropdownItem, { alignItems: 'center' }]}
+                  onPress={() => setShowCreateCategoryModal(true)}
+                >
+                  <Text style={[styles.dropdownItemText, { color: '#009DA5', fontWeight: 'bold' }]}>+ Tạo nhóm hàng mới</Text>
+                </TouchableOpacity>
               </View>
             )}
           </View>
+
+          {/* Create Category Modal */}
+          <Modal
+            visible={showCreateCategoryModal}
+            transparent={true}
+            animationType="slide"
+            onRequestClose={() => setShowCreateCategoryModal(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContainerSmall}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Tạo nhóm hàng</Text>
+                  <TouchableOpacity onPress={() => setShowCreateCategoryModal(false)}>
+                    <Icon name="close" size={24} color="#666" />
+                  </TouchableOpacity>
+                </View>
+                <View style={{ width: '100%' }}>
+                  <Text style={styles.label}>Tên nhóm hàng</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={newCategoryName}
+                    onChangeText={setNewCategoryName}
+                    placeholder="Ví dụ: Đồ uống"
+                  />
+                  <Text style={[styles.label, { marginTop: 12 }]}>Mô tả (tùy chọn)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={newCategoryDesc}
+                    onChangeText={setNewCategoryDesc}
+                    placeholder="Mô tả ngắn"
+                  />
+                  <TouchableOpacity style={[styles.addButton, { backgroundColor: '#009DA5', marginTop: 16, opacity: isCreatingCategory ? 0.7 : 1 }]} onPress={handleCreateCategory} disabled={isCreatingCategory}>
+                    {isCreatingCategory ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <Text style={{ color: '#fff', fontWeight: 'bold' }}>Tạo nhóm hàng</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
 
           {/* Prices Row */}
           <View style={styles.rowContainer}>
@@ -290,58 +493,12 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
           <View style={styles.rowContainer}>
             <View style={[styles.fieldContainer, styles.halfWidth]}>
               <Text style={styles.label}>Đơn vị gốc <Text style={styles.requiredStar}>*</Text></Text>
-              <TouchableOpacity 
-                style={styles.dropdownInput}
-                onPress={() => setShowUnitModal(true)}
-              >
-                <Text style={[
-                  styles.dropdownText,
-                  !baseUnit && styles.dropdownPlaceholder
-                ]}>
-                  {baseUnit || 'Chọn đơn vị gốc'}
-                </Text>
-                <Icon name="chevron-down" size={20} color="#666" />
-              </TouchableOpacity>
-              
-              <Modal
-                visible={showUnitModal}
-                transparent={true}
-                animationType="slide"
-                onRequestClose={() => setShowUnitModal(false)}
-              >
-                <View style={styles.modalOverlay}>
-                  <View style={styles.modalContainerSmall}>
-                    <View style={styles.modalHeader}>
-                      <Text style={styles.modalTitle}>Chọn đơn vị gốc</Text>
-                      <TouchableOpacity onPress={() => setShowUnitModal(false)} style={styles.closeButton}>
-                        <Icon name="close" size={24} color="#666" />
-                      </TouchableOpacity>
-                    </View>
-                    <ScrollView style={styles.modalContent}>
-                      {units.map((unit) => (
-                        <TouchableOpacity
-                          key={unit}
-                          style={[
-                            styles.dropdownItem,
-                            baseUnit === unit && styles.dropdownItemSelected
-                          ]}
-                          onPress={() => {
-                            setBaseUnit(unit);
-                            setShowUnitModal(false);
-                          }}
-                        >
-                          <Text style={[
-                            styles.dropdownItemText,
-                            baseUnit === unit && styles.dropdownItemTextSelected
-                          ]}>
-                            {unit}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                </View>
-              </Modal>
+              <TextInput
+                style={styles.input}
+                value={baseUnit}
+                onChangeText={setBaseUnit}
+                placeholder={`Ví dụ: ${units.join(', ')}`}
+              />
             </View>
           </View>
 
@@ -424,8 +581,12 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
 
       {/* Save Button */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.saveButton} onPress={handleSaveProduct}>
-          <Text style={styles.saveButtonText}>Lưu sản phẩm</Text>
+        <TouchableOpacity style={[styles.saveButton, isSaving && { opacity: 0.7 }]} onPress={handleSaveProduct} disabled={isSaving}>
+          {isSaving ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.saveButtonText}>Lưu sản phẩm</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>

@@ -8,6 +8,7 @@ import {
   Platform,
   Animated,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera, useCameraDevice, useCodeScanner } from 'react-native-vision-camera';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -16,6 +17,7 @@ import { RootStackParamList } from '../types/navigation';
 
 const ScannerScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
   const [hasPermission, setHasPermission] = useState<string>('not-determined');
   const [isLoadingDevice, setIsLoadingDevice] = useState(true);
   const [isScanning, setIsScanning] = useState(true);
@@ -207,7 +209,7 @@ const ScannerScreen = () => {
 
   // Camera thật
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top','bottom','left','right']}>
       <Camera
         style={StyleSheet.absoluteFill}
         device={device}
@@ -239,12 +241,12 @@ const ScannerScreen = () => {
         </View>
       </View>
       <TouchableOpacity
-        style={styles.closeButton}
+        style={[styles.closeButton, { top: insets.top + 12 }]}
         onPress={() => navigation.goBack()}
       >
         <Icon name="close" size={24} color="#FFFFFF" />
       </TouchableOpacity>
-      <View style={styles.bottomContent}>
+      <View style={[styles.bottomContent, { bottom: (insets.bottom || 0) + 24 }] }>
         <Text style={styles.instructions}>
           Căn chỉnh mã vạch vào giữa khung quét
         </Text>
@@ -260,7 +262,7 @@ const ScannerScreen = () => {
           </TouchableOpacity>
         )}
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 

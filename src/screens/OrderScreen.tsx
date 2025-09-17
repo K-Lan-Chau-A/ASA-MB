@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   FlatList,
   TextInput,
@@ -12,9 +11,12 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, NavigationProp, RouteProp, useFocusEffect } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
+import API_URL from '../config/api';
+import { getShopId, getAuthToken } from '../services/AuthStore';
 
 interface ProductUnit {
   unitName: string;
@@ -33,107 +35,14 @@ interface Product {
   selectedUnit: string; // Tên đơn vị hiện tại được chọn
 }
 
-// Sample products for selection (normally would come from API)
-const availableProducts = [
-  { 
-    id: '1', 
-    name: 'Coca Cola', 
-    price: 15000, 
-    barcode: '1234567890123',
-    units: [
-      { unitName: 'Chai', price: 15000, quantityInBaseUnit: 1, isBaseUnit: true },
-      { unitName: 'Lốc (6 chai)', price: 85000, quantityInBaseUnit: 6, isBaseUnit: false },
-      { unitName: 'Thùng (24 chai)', price: 330000, quantityInBaseUnit: 24, isBaseUnit: false }
-    ],
-    selectedUnit: 'Chai'
-  },
-  { 
-    id: '2', 
-    name: 'Pepsi Cola', 
-    price: 14000, 
-    barcode: '2345678901234',
-    units: [
-      { unitName: 'Chai', price: 14000, quantityInBaseUnit: 1, isBaseUnit: true },
-      { unitName: 'Lốc (6 chai)', price: 80000, quantityInBaseUnit: 6, isBaseUnit: false },
-      { unitName: 'Thùng (24 chai)', price: 310000, quantityInBaseUnit: 24, isBaseUnit: false }
-    ],
-    selectedUnit: 'Chai'
-  },
-  { 
-    id: '3', 
-    name: 'Nước suối Aquafina', 
-    price: 8000, 
-    barcode: '8934588063053',
-    units: [
-      { unitName: 'Chai', price: 8000, quantityInBaseUnit: 1, isBaseUnit: true },
-      { unitName: 'Lốc (12 chai)', price: 90000, quantityInBaseUnit: 12, isBaseUnit: false },
-      { unitName: 'Thùng (24 chai)', price: 175000, quantityInBaseUnit: 24, isBaseUnit: false }
-    ],
-    selectedUnit: 'Chai'
-  },
-  { 
-    id: '4', 
-    name: 'Bánh mì thịt nướng', 
-    price: 25000, 
-    barcode: '4567890123456',
-    units: [
-      { unitName: 'Cái', price: 25000, quantityInBaseUnit: 1, isBaseUnit: true }
-    ],
-    selectedUnit: 'Cái'
-  },
-  { 
-    id: '5', 
-    name: 'Cà phê đen', 
-    price: 18000, 
-    barcode: '5678901234567',
-    units: [
-      { unitName: 'Ly', price: 18000, quantityInBaseUnit: 1, isBaseUnit: true }
-    ],
-    selectedUnit: 'Ly'
-  },
-  { 
-    id: '6', 
-    name: 'Trà sữa trân châu', 
-    price: 35000, 
-    barcode: '6789012345678',
-    units: [
-      { unitName: 'Ly', price: 35000, quantityInBaseUnit: 1, isBaseUnit: true }
-    ],
-    selectedUnit: 'Ly'
-  },
-  { 
-    id: '7', 
-    name: 'Bánh bao nhân thịt', 
-    price: 12000, 
-    barcode: '7890123456789',
-    units: [
-      { unitName: 'Cái', price: 12000, quantityInBaseUnit: 1, isBaseUnit: true },
-      { unitName: 'Khay (10 cái)', price: 110000, quantityInBaseUnit: 10, isBaseUnit: false }
-    ],
-    selectedUnit: 'Cái'
-  },
-  { 
-    id: '8', 
-    name: 'Nước cam ép', 
-    price: 22000, 
-    barcode: '8901234567890',
-    units: [
-      { unitName: 'Ly', price: 22000, quantityInBaseUnit: 1, isBaseUnit: true }
-    ],
-    selectedUnit: 'Ly'
-  },
-  { 
-    id: '9', 
-    name: 'Nabati', 
-    price: 8000, 
-    barcode: '8993175535878',
-    units: [
-      { unitName: 'Gói', price: 8000, quantityInBaseUnit: 1, isBaseUnit: true },
-      { unitName: 'Hộp (20 gói)', price: 150000, quantityInBaseUnit: 20, isBaseUnit: false }
-    ],
-    selectedUnit: 'Gói'
-  },
-];
+type AvailableProduct = {
+  id: string;
+  name: string;
+  price: number;
+  barcode?: string;
+  units: Array<{ unitName: string; price: number; quantityInBaseUnit: number; isBaseUnit: boolean }>;
+  selectedUnit: string;
+};
 
 // Memoized ProductItem component for better performance
 const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast }: { 
@@ -143,6 +52,7 @@ const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast }: {
   isLast?: boolean;
 }) => {
   const [showUnitDropdown, setShowUnitDropdown] = useState(false);
+  const [unitModalVisible, setUnitModalVisible] = useState(false);
   
   return (
     <View style={styles.productItem}>
@@ -152,44 +62,47 @@ const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast }: {
         <Text style={styles.productPrice}>{item.price.toLocaleString('vi-VN')}đ</Text>
         
         {/* Unit Selector */}
-        {item.units && item.units.length > 1 && (
+        {item.units && item.units.length > 0 && (
           <View style={styles.unitContainer}>
             <TouchableOpacity 
               style={styles.unitSelector}
-              onPress={() => setShowUnitDropdown(!showUnitDropdown)}
+              onPress={() => setUnitModalVisible(true)}
             >
-              <Text style={styles.unitText}>{item.selectedUnit}</Text>
-              <Icon name={showUnitDropdown ? "chevron-up" : "chevron-down"} size={16} color="#009DA5" />
+              <Text style={styles.unitText}>
+                {(() => {
+                  const current = item.units.find(u => u.unitName === item.selectedUnit);
+                  const factor = current?.quantityInBaseUnit ?? 1;
+                  return factor === 1 ? current?.unitName : `${current?.unitName} ${factor}`;
+                })()}
+              </Text>
+              <Icon name={unitModalVisible ? "chevron-up" : "chevron-down"} size={16} color="#009DA5" />
             </TouchableOpacity>
-            
-            {showUnitDropdown && (
-              <View style={[
-                styles.unitDropdown,
-                isLast && styles.unitDropdownLast // Position above if last item
-              ]}>
-                {item.units.map((unit) => (
-                  <TouchableOpacity
-                    key={unit.unitName}
-                    style={[
-                      styles.unitOption,
-                      unit.unitName === item.selectedUnit && styles.unitOptionSelected
-                    ]}
-                    onPress={() => {
-                      onUnitChange(item.id, unit.unitName);
-                      setShowUnitDropdown(false);
-                    }}
-                  >
-                    <Text style={[
-                      styles.unitOptionText,
-                      unit.unitName === item.selectedUnit && styles.unitOptionTextSelected
-                    ]}>
-                      {unit.unitName}
-                    </Text>
 
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
+            {/* Unit Picker Modal to avoid clipping inside lists */}
+            <Modal visible={unitModalVisible} transparent animationType="fade" onRequestClose={() => setUnitModalVisible(false)}>
+              <TouchableOpacity style={styles.unitPickerModalOverlay} activeOpacity={1} onPress={() => setUnitModalVisible(false)}>
+                <View style={styles.unitPickerCard}>
+                  {item.units
+                    .slice()
+                    .sort((a, b) => (a.quantityInBaseUnit || 1) - (b.quantityInBaseUnit || 1))
+                    .map((unit) => (
+                      <TouchableOpacity
+                        key={unit.unitName}
+                        style={[styles.unitPickerOption, unit.unitName === item.selectedUnit && styles.unitPickerOptionSelected]}
+                        onPress={() => {
+                          onUnitChange(item.id, unit.unitName);
+                          setUnitModalVisible(false);
+                        }}
+                      >
+                        <Text style={[styles.unitPickerText, unit.unitName === item.selectedUnit && styles.unitPickerTextSelected]}>
+                          {unit.quantityInBaseUnit === 1 ? unit.unitName : `${unit.unitName} ${unit.quantityInBaseUnit}`}
+                        </Text>
+                        <Text style={styles.unitPickerPrice}>{unit.price.toLocaleString('vi-VN')}đ</Text>
+                      </TouchableOpacity>
+                    ))}
+                </View>
+              </TouchableOpacity>
+            </Modal>
           </View>
         )}
       </View>
@@ -281,6 +194,8 @@ const OrderScreen = () => {
   const route = useRoute<RouteProp<RootStackParamList, 'Order'>>();
   const [products, setProducts] = useState<Product[]>(persistedProducts);
   const [searchText, setSearchText] = useState('');
+  const [availableProducts, setAvailableProducts] = useState<AvailableProduct[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
@@ -432,17 +347,14 @@ const OrderScreen = () => {
   const handleUnitChange = useCallback((id: string, unitName: string) => {
     setProducts(prevProducts => 
       prevProducts.map(product => {
-        if (product.id === id) {
-          const selectedUnit = product.units.find(unit => unit.unitName === unitName);
-          if (selectedUnit) {
-            return {
-              ...product,
-              selectedUnit: unitName,
-              price: selectedUnit.price
-            };
-          }
-        }
-        return product;
+        if (product.id !== id) return product;
+        const selectedUnit = product.units.find(unit => unit.unitName === unitName);
+        if (!selectedUnit) return product;
+        return {
+          ...product,
+          selectedUnit: unitName,
+          price: selectedUnit.price,
+        };
       })
     );
   }, []);
@@ -527,26 +439,22 @@ const OrderScreen = () => {
     if (!searchText || searchText.trim() === '') {
       return [];
     }
-
     const searchTerm = searchText.toLowerCase().trim();
     const filtered = availableProducts.filter(product => 
-      product.name.toLowerCase().includes(searchTerm)
+      product.name.toLowerCase().includes(searchTerm) || (product.barcode || '').includes(searchTerm)
     );
-
-    // Limit results to prevent too many items when searching single characters
-    return filtered.slice(0, 10); // Maximum 10 results
-  }, [searchText]);
+    return filtered.slice(0, 10);
+  }, [searchText, availableProducts]);
 
   const totalFilteredCount = useMemo(() => {
     if (!searchText || searchText.trim() === '') {
       return 0;
     }
-
     const searchTerm = searchText.toLowerCase().trim();
     return availableProducts.filter(product => 
-      product.name.toLowerCase().includes(searchTerm)
+      product.name.toLowerCase().includes(searchTerm) || (product.barcode || '').includes(searchTerm)
     ).length;
-  }, [searchText]);
+  }, [searchText, availableProducts]);
 
   const renderProduct = useCallback(({ item, index }: { item: Product; index: number }) => (
     <ProductItem 
@@ -585,14 +493,37 @@ const OrderScreen = () => {
   const renderAvailableProduct = useCallback(({ item }: { item: any }) => {
     const currentQuantity = productQuantities.get(item.id) || 0;
     
-    const handleAddProduct = () => {
-      // Create product with base unit selected
-      const productToAdd = {
-        ...item,
-        price: item.units[0].price,
-        selectedUnit: item.units[0].unitName
-      };
-      addProduct(productToAdd);
+    const handleAddProduct = async () => {
+      try {
+        const shopId = (await getShopId()) ?? 0;
+        const token = await getAuthToken();
+        const res = await fetch(`${API_URL}/api/product-units?ShopId=${shopId}&ProductId=${item.id}&page=1&pageSize=50`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        const data = await res.json();
+        const unitsApi: Array<{ unitName?: string; name?: string; price?: number; conversionFactor?: number }>
+          = Array.isArray(data?.items) ? data.items : [];
+        const units = unitsApi.length > 0
+          ? unitsApi.map(u => ({
+              unitName: String(u.unitName ?? u.name ?? 'Cái'),
+              price: Number(u.price ?? item.price ?? 0),
+              quantityInBaseUnit: Number(u.conversionFactor ?? 1),
+              isBaseUnit: Number(u.conversionFactor ?? 1) === 1,
+            }))
+          : item.units;
+        const base = units.find((u: any) => u.isBaseUnit) || units[0];
+        const productToAdd = {
+          ...item,
+          units,
+          price: base.price,
+          selectedUnit: base.unitName,
+        };
+        addProduct(productToAdd);
+      } catch (e) {
+        // fallback to existing units
+        const base = item.units[0];
+        addProduct({ ...item, price: base.price, selectedUnit: base.unitName });
+      }
     };
     
     return (
@@ -605,10 +536,57 @@ const OrderScreen = () => {
     );
   }, [productQuantities, addProduct, updateQuantity]);
 
+  // Fetch suggestions when typing (debounced)
+  useEffect(() => {
+    const run = async () => {
+      const term = searchText.trim();
+      if (term.length === 0) {
+        setAvailableProducts([]);
+        return;
+      }
+      setIsSearching(true);
+      try {
+        const shopId = (await getShopId()) ?? 0;
+        const token = await getAuthToken();
+        const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=100`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        const data = await res.json();
+        const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+        const mapped: AvailableProduct[] = items.map((p: any, idx: number) => {
+          const units = Array.isArray(p.units) && p.units.length > 0
+            ? (p.units as Array<{ name?: string; unitName?: string; price?: number; conversionFactor?: number; quantityInBaseUnit?: number; isBaseUnit?: boolean; }>).map((u) => ({
+                unitName: String(u.name ?? u.unitName ?? 'Cái'),
+                price: Number(u.price ?? p.price ?? 0),
+                quantityInBaseUnit: Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1),
+                isBaseUnit: Boolean(u.isBaseUnit ?? false),
+              }))
+            : [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true }];
+          const selectedUnit = (units.find(u => u.isBaseUnit) || units[0]).unitName;
+          return {
+            id: String(p.id ?? p.productId ?? idx + 1),
+            name: String(p.productName ?? p.name ?? 'Sản phẩm'),
+            price: Number(p.price ?? 0),
+            barcode: p.barcode ? String(p.barcode) : undefined,
+            units,
+            selectedUnit,
+          };
+        });
+        setAvailableProducts(mapped);
+      } catch (e) {
+        setAvailableProducts([]);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+    const t = setTimeout(run, 250);
+    return () => clearTimeout(t);
+  }, [searchText]);
+
 
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top','bottom','left','right']}>
       <TouchableWithoutFeedback onPress={handleTapOutside}>
         <View style={styles.content}>
           {/* Header */}
@@ -828,6 +806,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderRadius: 8,
     minHeight: 82, // Fixed height for better performance
+    overflow: 'visible',
   },
   productImage: {
     width: 50,
@@ -978,6 +957,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E5E5',
     maxHeight: '60%', // Limit to 60% of screen height
+    zIndex: 10,
   },
   availableProductsTitle: {
     fontSize: 16,
@@ -1030,6 +1010,8 @@ const styles = StyleSheet.create({
   unitContainer: {
     marginTop: 8,
     position: 'relative',
+    alignSelf: 'flex-start',
+    zIndex: 100,
   },
   unitSelector: {
     flexDirection: 'row',
@@ -1050,9 +1032,9 @@ const styles = StyleSheet.create({
   },
   unitDropdown: {
     position: 'absolute',
-    top: 30,
+    top: 36,
     left: 0,
-    right: 0,
+    right: undefined,
     backgroundColor: '#FFFFFF',
     borderRadius: 6,
     borderWidth: 1,
@@ -1064,8 +1046,46 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
-    elevation: 5,
+    elevation: 8,
     zIndex: 1000,
+    minWidth: 140,
+  },
+  unitPickerModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  unitPickerCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    maxHeight: '60%',
+  },
+  unitPickerOption: {
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  unitPickerOptionSelected: {
+    backgroundColor: '#F6FBFC',
+  },
+  unitPickerText: {
+    fontSize: 16,
+    color: '#000',
+  },
+  unitPickerTextSelected: {
+    color: '#009DA5',
+    fontWeight: 'bold',
+  },
+  unitPickerPrice: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 12,
   },
   unitDropdownLast: {
     top: undefined,

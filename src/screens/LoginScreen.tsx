@@ -19,6 +19,7 @@ import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types/navigation';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import API_URL from '../config/api';
+import { authStore } from '../services/AuthStore';
 
 const LoginScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
@@ -79,6 +80,49 @@ const LoginScreen = () => {
       const result = await response.json();
 
       if (result.success) {
+        // Persist auth data for later use (shopId, token, user info)
+        try {
+          if (result?.data?.accessToken) {
+            await authStore.save({
+              userId: result?.data?.userId ?? 0,
+              username: result?.data?.username ?? '',
+              status: result?.data?.status ?? 0,
+              shopId: result?.data?.shopId ?? 0,
+              role: result?.data?.role ?? 0,
+              avatar: result?.data?.avatar ?? null,
+              createdAt: result?.data?.createdAt ?? undefined,
+              accessToken: result?.data?.accessToken,
+            });
+          }
+        } catch (e) {
+          console.log('Failed to persist auth data:', e);
+        }
+        // On real devices, send FCM registration to backend; skip on emulator
+        try {
+          if (!isEmulator) {
+            const tokenToSend = fcmToken || (await fcmService.getFCMToken().catch(() => null));
+            if (tokenToSend) {
+              const derivedUserId =
+                (typeof result?.userId === 'number' && result.userId) ??
+                (typeof result?.data?.userId === 'number' && result.data.userId) ??
+                0;
+              await fetch(`${API_URL}/api/Fcm`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  userId: derivedUserId,
+                  fcmToken: tokenToSend,
+                  uniqueId: null,
+                }),
+              });
+            }
+          }
+        } catch (e) {
+          console.log('Failed to send FCM info:', e);
+        }
+
         navigation.reset({
           index: 0,
           routes: [{ name: 'MainApp' }],
@@ -95,7 +139,7 @@ const LoginScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['top','bottom','left','right']}>
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.content}
