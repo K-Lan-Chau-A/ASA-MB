@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, TouchableOpacity, StyleSheet, Keyboard } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Keyboard, Modal, Text, TextInput, Alert } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList, TabParamList } from '../types/navigation';
+import API_URL from '../config/api';
+import { getShiftId, getUserId, getShopId, getAuthToken, setShiftId } from '../services/AuthStore';
 
 // Import screens
 import HomeScreen from '../screens/HomeScreen';
@@ -19,6 +21,9 @@ const Tab = createBottomTabNavigator<TabParamList>();
 const AddOrderButton = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [openShiftVisible, setOpenShiftVisible] = useState(false);
+  const [openingCashInput, setOpeningCashInput] = useState<string>('0');
+  const [openingShiftSubmitting, setOpeningShiftSubmitting] = useState(false);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -29,9 +34,58 @@ const AddOrderButton = () => {
     };
   }, []);
 
-  const handleOrderPress = () => {
-    navigation.navigate('Order');
-  };
+  const handleOrderPress = useCallback(async () => {
+    try {
+      const shiftId = (await getShiftId()) ?? 0;
+      if (!shiftId || Number(shiftId) <= 0) {
+        setOpenShiftVisible(true);
+        return;
+      }
+      navigation.navigate('Order');
+    } catch {
+      setOpenShiftVisible(true);
+    }
+  }, [navigation]);
+
+  const handleOpenShift = useCallback(async () => {
+    if (openingShiftSubmitting) return;
+    setOpeningShiftSubmitting(true);
+    try {
+      const token = await getAuthToken();
+      const shopId = (await getShopId()) ?? 0;
+      const userId = (await getUserId()) ?? 0;
+      const body = {
+        userId: Number(userId || 0),
+        openingCash: Number(parseFloat(openingCashInput || '0')) || 0,
+        shopId: Number(shopId || 0),
+      };
+      const res = await fetch(`${API_URL}/api/shifts/open-shift`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        const txt = typeof json === 'object' ? JSON.stringify(json) : String(json);
+        throw new Error(txt || 'Mở ca thất bại');
+      }
+      const envelope = json && typeof json === 'object' && 'data' in json ? json.data : json;
+      const newShiftId = Number(envelope?.shiftId ?? 0);
+      if (!newShiftId) {
+        throw new Error('Phản hồi mở ca không có shiftId');
+      }
+      await setShiftId(newShiftId);
+      setOpenShiftVisible(false);
+      navigation.navigate('Order');
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message ?? 'Không thể mở ca');
+    } finally {
+      setOpeningShiftSubmitting(false);
+    }
+  }, [openingCashInput, openingShiftSubmitting, navigation]);
 
   if (keyboardVisible) {
     return null;
@@ -45,6 +99,33 @@ const AddOrderButton = () => {
       >
         <Icon name="plus" size={24} color="#FFFFFF" />
       </TouchableOpacity>
+      <Modal visible={openShiftVisible} transparent animationType="fade" onRequestClose={() => {}}>
+        <View style={styles.osOverlay}>
+          <View style={styles.osCard}>
+            <Text style={styles.osTitle}>Mở ca làm việc</Text>
+            <Text style={styles.osSubtitle}>Nhập tiền đầu ca (có thể để 0)</Text>
+            <View style={styles.osInputRow}>
+              <Text style={styles.osCurrency}>đ</Text>
+              <TextInput
+                style={styles.osInput}
+                keyboardType="numeric"
+                value={openingCashInput}
+                onChangeText={setOpeningCashInput}
+                placeholder="0"
+                placeholderTextColor="#999"
+              />
+            </View>
+            <View style={styles.osActions}>
+              <TouchableOpacity style={styles.osCancelBtn} onPress={() => setOpenShiftVisible(false)} disabled={openingShiftSubmitting}>
+                <Text style={styles.osCancelText}>Hủy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.osConfirmBtn} onPress={handleOpenShift} disabled={openingShiftSubmitting}>
+                <Text style={styles.osConfirmText}>{openingShiftSubmitting ? 'Đang mở...' : 'Mở ca'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -152,6 +233,83 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+  },
+  osOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  osCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    width: '100%',
+    maxWidth: 380,
+  },
+  osTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#000',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  osSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  osInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#FAFAFA',
+  },
+  osCurrency: {
+    fontSize: 16,
+    color: '#009DA5',
+    fontWeight: 'bold',
+    marginRight: 6,
+  },
+  osInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#000',
+  },
+  osActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  osCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    alignItems: 'center',
+  },
+  osCancelText: {
+    color: '#666',
+    fontSize: 16,
+  },
+  osConfirmBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#009DA5',
+    alignItems: 'center',
+  },
+  osConfirmText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 
 });

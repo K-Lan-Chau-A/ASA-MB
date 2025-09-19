@@ -88,6 +88,7 @@ const LoginScreen = () => {
               username: result?.data?.username ?? '',
               status: result?.data?.status ?? 0,
               shopId: result?.data?.shopId ?? 0,
+              shiftId: result?.data?.shiftId ?? 0,
               role: result?.data?.role ?? 0,
               avatar: result?.data?.avatar ?? null,
               createdAt: result?.data?.createdAt ?? undefined,

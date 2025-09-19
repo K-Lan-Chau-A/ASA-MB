@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   ScrollView,
   Modal,
   Dimensions,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navigation/native';
@@ -16,6 +17,8 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
 import { clearGlobalOrderState } from './OrderScreen';
 import { Picker } from '@react-native-picker/picker';
+import API_URL from '../config/api';
+import { getAuthToken, getShopId, getShiftId } from '../services/AuthStore';
 
 interface Product {
   id: string;
@@ -28,6 +31,8 @@ interface Product {
     price: number;
     quantityInBaseUnit: number;
     isBaseUnit: boolean;
+    productUnitId?: number;
+    unitId?: number;
   }>;
   selectedUnit: string;
 }
@@ -53,6 +58,10 @@ const ConfirmOrderScreen = () => {
   const [showQRModal, setShowQRModal] = useState(false);
   const [showNFCModal, setShowNFCModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [createdOrder, setCreatedOrder] = useState<any | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [qrData, setQrData] = useState<{ url: string; amount: number; orderId: number } | null>(null);
+  const qrPollTimer = useRef<NodeJS.Timeout | null>(null);
 
   const [availablePromoCodes] = useState(['GIAM10', 'GIAM50K', 'WELCOME']);
 
@@ -66,6 +75,157 @@ const ConfirmOrderScreen = () => {
   }, [discountPercentage, originalTotal]);
 
   const finalTotal = originalTotal - appliedDiscount;
+
+  const mapPaymentMethodToCode = (method: PaymentMethod) => {
+    switch (method) {
+      case 'cash':
+        return 1;
+      case 'bank_transfer':
+        return 2;
+      case 'nfc_card':
+        return 3;
+      default:
+        return 1;
+    }
+  };
+
+  const resolveProductUnitId = async (shopId: number, productId: string, selectedUnitName: string, token: string | null): Promise<number> => {
+    // First, try to read from provided product units (coming from OrderScreen)
+    try {
+      const prod = (products as any[]).find((pr: any) => String(pr.id) === String(productId));
+      const fromLocal = (prod?.units as any[])?.find((u: any) => String(u.unitName).trim().toLowerCase() === String(selectedUnitName).trim().toLowerCase());
+      const localId = Number((fromLocal as any)?.productUnitId ?? 0);
+      if (Number.isFinite(localId) && localId > 0) return localId;
+    } catch {}
+    try {
+      const res = await fetch(`${API_URL}/api/product-units?ShopId=${shopId}&ProductId=${productId}&page=1&pageSize=50`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const data = await res.json();
+      const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+      const found = items.find((u: any) => {
+        const name = String(u.unitName ?? u.name ?? '').trim();
+        return name.toLowerCase() === String(selectedUnitName).trim().toLowerCase();
+      });
+      if (found) {
+        const id = Number(found?.id ?? found?.productUnitId ?? 0);
+        if (Number.isFinite(id) && id > 0) return id;
+      }
+      // Fallback to base unit (conversionFactor === 1)
+      const base = items.find((u: any) => Number(u.conversionFactor ?? 0) === 1) || items[0];
+      const baseId = Number(base?.id ?? base?.productUnitId ?? 0);
+      return Number.isFinite(baseId) && baseId > 0 ? baseId : 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  const submitOrder = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const token = await getAuthToken();
+      const shopId = (await getShopId()) ?? 0;
+      const shiftId = (await getShiftId()) ?? 0;
+      try { console.log('[CreateOrder] shopId', shopId, 'shiftId', shiftId, 'hasToken', Boolean(token)); } catch {}
+
+      const orderDetails = await Promise.all(products.map(async (p) => {
+        const productUnitId = await resolveProductUnitId(shopId, p.id, p.selectedUnit, token);
+        try {
+          console.log('[OrderDetail] productId', p.id, 'selectedUnit', p.selectedUnit, 'productUnitId', productUnitId, 'quantity', p.quantity);
+        } catch {}
+        return {
+          quantity: Number(p.quantity ?? 0),
+          productUnitId: Number(productUnitId ?? 0),
+          productId: Number(p.id),
+        };
+      }));
+
+      // Validate productUnitId resolution
+      if (orderDetails.some(d => !d.productUnitId || d.productUnitId === 0)) {
+        Alert.alert('Lỗi', 'Không xác định được đơn vị bán cho một số sản phẩm (không có đơn vị khả dụng).');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const payload: any = {
+        paymentMethod: mapPaymentMethodToCode(selectedPaymentMethod),
+        status: selectedPaymentMethod === 'cash' ? 1 : 0,
+        shiftId: shiftId,
+        shopId: shopId,
+        discount: appliedDiscount > 0 ? Number(appliedDiscount) : null,
+        note: (promoCode || discountReason) ? [promoCode ? `Mã: ${promoCode}` : '', discountReason ? `Lý do: ${discountReason}` : ''].filter(Boolean).join(' | ') : null,
+        orderDetails,
+      };
+
+      try {
+        console.log('[CreateOrder] payload.shopId', payload.shopId, 'paymentMethod', payload.paymentMethod, 'status', payload.status);
+        console.log('[CreateOrder] payload.orderDetails', payload.orderDetails);
+      } catch {}
+
+      // Only include optional fields if provided
+      // customerId and voucherId intentionally omitted unless available in future
+
+      const res = await fetch(`${API_URL}/api/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const msg = await res.text();
+        try { console.log('[CreateOrder] HTTP', res.status, msg); } catch {}
+        throw new Error(msg || 'Tạo đơn hàng thất bại');
+      }
+
+      // Read created order and proceed to success
+      let data: any = null;
+      try { data = await res.json(); } catch (e) {
+        try { const txt = await res.text(); console.log('[CreateOrder] non-JSON response', txt); } catch {}
+      }
+      // Handle envelope { success, message, data: {...} }
+      const envelope = data && typeof data === 'object' && 'data' in data ? data.data : data;
+      if (envelope && typeof envelope.orderId !== 'undefined' && Number(envelope.orderId) > 0) {
+        try { console.log('[CreateOrder] created orderId', envelope.orderId); } catch {}
+        setCreatedOrder(envelope);
+        
+        // Show appropriate modal based on payment method
+        if (selectedPaymentMethod === 'bank_transfer') {
+          // Fetch QR code and show QR modal
+          await fetchQRCode(Number(envelope.orderId));
+          return; // Don't show success modal yet
+        } else if (selectedPaymentMethod === 'nfc_card') {
+          // Show NFC modal
+          setShowNFCModal(true);
+          return; // Don't show success modal yet
+        } else {
+          // Cash payment - show success modal
+          // Verify it appears in list
+          try {
+            const verifyRes = await fetch(`${API_URL}/api/orders?ShopId=${shopId}&page=1&pageSize=10`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            const verifyData = await verifyRes.json();
+            const verifyItems: any[] = Array.isArray(verifyData?.items) ? verifyData.items : Array.isArray(verifyData) ? verifyData : [];
+            const found = verifyItems.some((o: any) => Number(o.orderId ?? o.id) === Number(envelope.orderId));
+            console.log('[CreateOrder] verification in list:', found);
+          } catch {}
+          setShowSuccessModal(true);
+        }
+      } else {
+        try { console.log('[CreateOrder] response missing orderId', data); } catch {}
+        Alert.alert('Lỗi', 'Tạo đơn không trả về orderId. Vui lòng thử lại.');
+        setCreatedOrder(null);
+      }
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message ?? 'Không thể tạo đơn hàng');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleApplyPromoCode = () => {
     if (!promoCode.trim()) {
@@ -127,11 +287,13 @@ const ConfirmOrderScreen = () => {
       return;
     }
     
-    // Show appropriate modal based on payment method
+    // For all payment methods, create order first, then show appropriate modal
     if (selectedPaymentMethod === 'bank_transfer') {
-      setShowQRModal(true);
+      // Create order first, then show QR modal
+      submitOrder();
     } else if (selectedPaymentMethod === 'nfc_card') {
-      setShowNFCModal(true);
+      // Create order first, then show NFC modal
+      submitOrder();
     } else {
       // Cash payment - direct confirmation
       Alert.alert(
@@ -141,26 +303,51 @@ const ConfirmOrderScreen = () => {
           { text: 'Hủy', style: 'cancel' },
           { 
             text: 'Thanh toán', 
-            onPress: () => {
-              setShowSuccessModal(true);
-            }
+            onPress: submitOrder
           },
         ]
       );
     }
   };
 
-  const handleQRPaymentConfirm = () => {
-    setShowQRModal(false);
-    setShowSuccessModal(true);
+  const handleQRPaymentConfirm = async () => {
+    if (isSubmitting) return;
+    // Deprecated: no manual confirm
   };
 
-  const handleNFCPaymentConfirm = () => {
-    setShowNFCModal(false);
-    setShowSuccessModal(true);
+  const fetchQRCode = async (orderId: number) => {
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}/api/sepay/vietqr?orderId=${orderId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const data = await res.json();
+      if (data?.success && data?.url) {
+        try { console.log('[VietQR] url', data.url, 'amount', data.amount, 'orderId', data.orderId ?? orderId); } catch {}
+        setQrData({ url: data.url, amount: data.amount || 0, orderId: data.orderId || orderId });
+        setShowQRModal(true);
+        try { console.log('[VietQR] modal opened'); } catch {}
+        // start polling order status until paid
+        startPollOrderPaidStatus(data.orderId || orderId);
+      } else {
+        throw new Error(data?.message || 'Không thể tạo mã QR');
+      }
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message ?? 'Không thể tạo mã QR thanh toán');
+    }
+  };
+
+  const handleNFCPaymentConfirm = async () => {
+    if (isSubmitting) return;
+    // Deprecated: waiting for NFC confirm logic
   };
 
   const handleSuccessModalClose = () => {
+    // stop polling if any
+    if (qrPollTimer.current) {
+      clearInterval(qrPollTimer.current);
+      qrPollTimer.current = null;
+    }
     setShowSuccessModal(false);
     // Clear global order state before navigating to MainApp
     clearGlobalOrderState();
@@ -180,6 +367,10 @@ const ConfirmOrderScreen = () => {
   };
 
   const handleGoHome = () => {
+    if (qrPollTimer.current) {
+      clearInterval(qrPollTimer.current);
+      qrPollTimer.current = null;
+    }
     setShowSuccessModal(false);
     // Clear global order state before navigating to MainApp
     clearGlobalOrderState();
@@ -205,32 +396,83 @@ const ConfirmOrderScreen = () => {
     }
   };
 
-  // Generate invoice data
+  // Generate invoice data (prefer backend-created order when available)
   const generateInvoiceData = () => {
+    if (createdOrder && typeof createdOrder.orderId !== 'undefined') {
+      const createdAtStr = String(createdOrder.createdAt ?? createdOrder.datetime ?? new Date().toISOString());
+      const dt = new Date(createdAtStr);
+      const date = dt.toLocaleDateString('vi-VN', { day: 'numeric', month: 'long', year: 'numeric' });
+      const time = dt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
+      return {
+        invoiceNumber: `#${createdOrder.orderId}`,
+        date,
+        time,
+        paymentMethod: getPaymentMethodName(selectedPaymentMethod),
+        totalAmount: Number(createdOrder.totalPrice ?? finalTotal),
+        products: products,
+      };
+    }
     const now = new Date();
     const invoiceNumber = `HD${String(Math.floor(Math.random() * 10000000)).padStart(7, '0')}`;
-    const date = now.toLocaleDateString('vi-VN', { 
-      day: 'numeric', 
-      month: 'long', 
-      year: 'numeric' 
-    });
-    const time = now.toLocaleTimeString('vi-VN', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: false 
-    });
-    
+    const date = now.toLocaleDateString('vi-VN', { day: 'numeric', month: 'long', year: 'numeric' });
+    const time = now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
     return {
       invoiceNumber,
       date,
       time,
       paymentMethod: getPaymentMethodName(selectedPaymentMethod),
       totalAmount: finalTotal,
-      products: products
+      products: products,
     };
   };
 
   const invoiceData = generateInvoiceData();
+
+  const startPollOrderPaidStatus = async (orderId: number) => {
+    if (!orderId) return;
+    // clear any existing poller
+    if (qrPollTimer.current) {
+      clearInterval(qrPollTimer.current);
+      qrPollTimer.current = null;
+    }
+    const token = await getAuthToken();
+    const shopId = (await getShopId()) ?? 0;
+    const poll = async () => {
+      try {
+        console.log('[VietQR][poll] checking orderId', orderId, 'shopId', shopId);
+        const res = await fetch(`${API_URL}/api/orders?ShopId=${shopId}&page=1&pageSize=10`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        
+        if (!res.ok) {
+          console.log('[VietQR][poll] HTTP error', res.status, res.statusText);
+          return;
+        }
+        
+        const json = await res.json();
+        console.log('[VietQR][poll] response', json);
+        const items: any[] = Array.isArray(json?.items) ? json.items : [];
+        const order = items.find((o: any) => Number(o.orderId) === Number(orderId));
+        console.log('[VietQR][poll] found order', order);
+        
+        if (order && Number(order.status) === 1) {
+          // paid → stop polling and close QR, open success
+          console.log('[VietQR][poll] order paid, closing QR modal');
+          if (qrPollTimer.current) {
+            clearInterval(qrPollTimer.current);
+            qrPollTimer.current = null;
+          }
+          setShowQRModal(false);
+          setShowSuccessModal(true);
+        }
+      } catch (e) {
+        console.log('[VietQR][poll] error', e);
+      }
+    };
+    // run immediately once, then interval every 5 seconds
+    await poll();
+    qrPollTimer.current = setInterval(poll, 5000);
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top','bottom','left','right']}>
@@ -472,50 +714,38 @@ const ConfirmOrderScreen = () => {
             </View>
             
             <View style={styles.qrCodeContainer}>
-              <View style={styles.vietqrHeader}>
-                <Text style={styles.vietqrText}>VIETQR</Text>
-                <View style={styles.vietqrBadge}>
-                  <Text style={styles.vietqrBadgeText}>CHÍNH THỨC</Text>
-                </View>
-              </View>
-              
               <View style={styles.qrCodeWrapper}>
-                <View style={styles.qrCodePlaceholder}>
-                  <View style={styles.qrCodeGrid}>
-                    {Array.from({ length: 25 }, (_, i) => (
-                      <View key={i} style={[styles.qrCodeDot, { opacity: Math.random() > 0.3 ? 1 : 0.3 }]} />
-                    ))}
-                  </View>
-                  <View style={styles.qrCodeOverlay}>
-                    <View style={styles.qrCodeVContainer}>
-                      <Text style={styles.qrCodeV}>V</Text>
+                {qrData?.url ? (
+                  <Image
+                    source={{ uri: qrData.url }}
+                    style={styles.qrCodeImage}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={styles.qrCodePlaceholder}>
+                    <View style={styles.qrCodeGrid}>
+                      {Array.from({ length: 25 }, (_, i) => (
+                        <View key={i} style={[styles.qrCodeDot, { opacity: Math.random() > 0.3 ? 1 : 0.3 }]} />
+                      ))}
+                    </View>
+                    <View style={styles.qrCodeOverlay}>
+                      <View style={styles.qrCodeVContainer}>
+                        <Text style={styles.qrCodeV}>V</Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              </View>
-              
-              <View style={styles.paymentLogos}>
-                <View style={styles.logoItem}>
-                  <Text style={styles.logoText}>napas 247</Text>
-                </View>
-                <View style={styles.logoItem}>
-                  <Text style={styles.logoText}>VietinBank</Text>
-                </View>
+                )}
               </View>
             </View>
             
             <View style={styles.modalTotalSection}>
               <View style={styles.modalTotalRow}>
                 <Text style={styles.modalTotalLabel}>Tổng cộng:</Text>
-                <Text style={styles.modalTotalAmount}>{finalTotal.toLocaleString('vi-VN')}đ</Text>
+                <Text style={styles.modalTotalAmount}>{(qrData?.amount || finalTotal).toLocaleString('vi-VN')}đ</Text>
               </View>
             </View>
             
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalConfirmButton} onPress={handleQRPaymentConfirm}>
-                <Icon name="check" size={18} color="#FFFFFF" />
-                <Text style={styles.modalConfirmButtonText}>Xác nhận thanh toán</Text>
-              </TouchableOpacity>
               <TouchableOpacity style={styles.modalCancelButton} onPress={() => setShowQRModal(false)}>
                 <Text style={styles.modalCancelButtonText}>Hủy bỏ</Text>
               </TouchableOpacity>
@@ -1092,6 +1322,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  qrCodeImage: {
+    width: 300,
+    height: 300,
+    borderRadius: 12,
   },
   paymentLogos: {
     flexDirection: 'row',

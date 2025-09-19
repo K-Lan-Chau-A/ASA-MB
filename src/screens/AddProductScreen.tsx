@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Asset, ImageLibraryOptions, launchImageLibrary } from 'react-native-image-picker';
 import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
@@ -92,9 +93,25 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
   }, [formatPrice, updateProduct]);
 
   const handleAddPhoto = useCallback(() => {
-    // TODO: Implement image picker
-    Alert.alert('Thông báo', 'Tính năng thêm ảnh sẽ được triển khai sau');
-  }, []);
+    const options: ImageLibraryOptions = {
+      mediaType: 'photo',
+      selectionLimit: 1,
+      includeBase64: false,
+    };
+    launchImageLibrary(options, (response) => {
+      if (response.didCancel) return;
+      if (response.errorCode) {
+        Alert.alert('Lỗi', response.errorMessage || 'Không thể mở thư viện ảnh');
+        return;
+      }
+      const asset: Asset | undefined = response.assets && response.assets[0];
+      if (asset?.uri) {
+        updateProduct('image', asset.uri);
+      } else {
+        Alert.alert('Lỗi', 'Không lấy được ảnh đã chọn');
+      }
+    });
+  }, [updateProduct]);
 
   // Load shopId and fetch categories
   useEffect(() => {
@@ -227,7 +244,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
   const saveProduct = useCallback(async (sellPrice: number, importPrice: number) => {
     try {
       setIsSaving(true);
-      // Build payload per API contract
+      // Build payload per API contract (multipart/form-data)
       const matchedCategory = categories.find((c) => c.categoryName === product.category);
       const categoryId = matchedCategory ? matchedCategory.categoryId : 0;
 
@@ -252,31 +269,49 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
           })),
       ];
 
-      const payload = {
-        shopId: shopId,
-        productName: product.name.trim(),
-        barcode: product.barcode.trim(),
-        categoryId,
-        imageUrl: product.image || '',
-        price: sellPrice,
-        discount: parsedDiscount,
-        status: 1,
-        units: unitsPayload,
-        inventoryTransaction: {
-          quantity: parsedQuantity,
-          price: importPrice,
-          imageUrl: product.image || '',
-        },
-      };
+      // Create multipart form
+      const form = new FormData();
+      form.append('ShopId', String(shopId));
+      form.append('ProductName', product.name.trim());
+      form.append('Barcode', product.barcode.trim());
+      form.append('CategoryId', String(categoryId));
+      form.append('Price', String(sellPrice));
+      form.append('Discount', String(parsedDiscount));
+      form.append('Status', String(1));
+      // Units as JSON array (server parses stringified JSON)
+      form.append('Units', JSON.stringify(unitsPayload));
+      // InventoryTransaction.* as nested fields
+      form.append('InventoryTransaction.Quantity', String(parsedQuantity));
+      form.append('InventoryTransaction.Price', String(importPrice));
+
+      // Attach product image file if available (optional)
+      if ((product.image || '').trim()) {
+        const uri = product.image.trim();
+        const name = uri.split('/').pop() || 'image.jpg';
+        const ext = (name.split('.').pop() || 'jpg').toLowerCase();
+        const type = ext === 'png' ? 'image/png' : ext === 'jpeg' || ext === 'jpg' ? 'image/jpeg' : 'application/octet-stream';
+        // Image for product
+        form.append('ImageFile', {
+          uri,
+          name,
+          type,
+        } as any);
+        // Image for inventory transaction (optional mirror)
+        form.append('InventoryTransaction.ImageFile', {
+          uri,
+          name: `inventory_${name}`,
+          type,
+        } as any);
+      }
 
       const token = await getAuthToken();
       const res = await fetch(`${API_URL}/api/products`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          // Let fetch set proper multipart boundary automatically
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify(payload),
+        body: form,
       });
 
       const result = await res.json().catch(() => ({}));
@@ -329,8 +364,18 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
             style={styles.photoBox}
             onPress={handleAddPhoto}
           >
-            <Icon name="camera-plus-outline" size={24} color="#009DA5" />
-            <Text style={styles.photoLabel}>Thêm ảnh</Text>
+            {product.image ? (
+              <Image
+                source={{ uri: product.image }}
+                style={{ width: '100%', height: '100%', borderRadius: 8 }}
+                resizeMode="cover"
+              />
+            ) : (
+              <>
+                <Icon name="camera-plus-outline" size={24} color="#009DA5" />
+                <Text style={styles.photoLabel}>Thêm ảnh</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
 

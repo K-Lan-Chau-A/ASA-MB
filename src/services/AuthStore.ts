@@ -5,6 +5,7 @@ export type AuthData = {
   username: string;
   status: number;
   shopId: number;
+  shiftId?: number;
   role: number;
   avatar?: string | null;
   accessToken: string;
@@ -39,6 +40,22 @@ export const getAuthToken = async (): Promise<string | null> => {
 export const getShopId = async (): Promise<number | null> => {
   const d = await authStore.load();
   return typeof d?.shopId === 'number' ? d!.shopId : null;
+};
+
+export const getShiftId = async (): Promise<number | null> => {
+  const d = await authStore.load();
+  return typeof (d as any)?.shiftId === 'number' ? (d as any).shiftId as number : null;
+};
+
+export const getUserId = async (): Promise<number | null> => {
+  const d = await authStore.load();
+  return typeof d?.userId === 'number' ? d!.userId : null;
+};
+
+export const setShiftId = async (shiftId: number): Promise<void> => {
+  const d = await authStore.load();
+  const updated = { ...(d ?? {}), shiftId } as AuthData & { shiftId: number };
+  await authStore.save(updated);
 };
 
 

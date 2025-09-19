@@ -16,13 +16,16 @@ import { useNavigation, useRoute, NavigationProp, RouteProp, useFocusEffect } fr
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
 import API_URL from '../config/api';
-import { getShopId, getAuthToken } from '../services/AuthStore';
+import { getShopId, getAuthToken, getShiftId, getUserId } from '../services/AuthStore';
+import { setShiftId } from '../services/AuthStore';
 
 interface ProductUnit {
   unitName: string;
   price: number;
   quantityInBaseUnit: number; // Số lượng đơn vị chuẩn trong 1 đơn vị này
   isBaseUnit: boolean;
+  productUnitId?: number;
+  unitId?: number;
 }
 
 interface Product {
@@ -402,6 +405,7 @@ const OrderScreen = () => {
     }
   }, []);
 
+
   // Show dropdown based on showDropdown state and has text
   const showAvailableProducts = showDropdown && searchText.trim().length > 0;
 
@@ -501,7 +505,7 @@ const OrderScreen = () => {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         const data = await res.json();
-        const unitsApi: Array<{ unitName?: string; name?: string; price?: number; conversionFactor?: number }>
+        const unitsApi: Array<{ unitName?: string; name?: string; price?: number; conversionFactor?: number; productUnitId?: number; id?: number; unitId?: number }>
           = Array.isArray(data?.items) ? data.items : [];
         const units = unitsApi.length > 0
           ? unitsApi.map(u => ({
@@ -509,14 +513,21 @@ const OrderScreen = () => {
               price: Number(u.price ?? item.price ?? 0),
               quantityInBaseUnit: Number(u.conversionFactor ?? 1),
               isBaseUnit: Number(u.conversionFactor ?? 1) === 1,
+              productUnitId: Number(u.productUnitId ?? u.id ?? 0) || undefined,
+              unitId: Number(u.unitId ?? 0) || undefined,
             }))
           : item.units;
+        try {
+          console.log('[Units] productId', item.id, 'units', units.map((u: any) => ({ unitName: u.unitName, productUnitId: u.productUnitId, conversionFactor: u.quantityInBaseUnit, price: u.price })));
+        } catch {}
         const base = units.find((u: any) => u.isBaseUnit) || units[0];
         const productToAdd = {
           ...item,
           units,
           price: base.price,
           selectedUnit: base.unitName,
+          // carry selected unit's productUnitId for downstream use
+          // (ConfirmOrderScreen will rely on this to avoid re-fetching)
         };
         addProduct(productToAdd);
       } catch (e) {
@@ -727,6 +738,7 @@ const OrderScreen = () => {
           </TouchableOpacity>
         </View>
       </View>
+
         </View>
       </TouchableWithoutFeedback>
     </SafeAreaView>
