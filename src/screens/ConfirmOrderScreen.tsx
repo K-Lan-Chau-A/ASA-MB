@@ -469,9 +469,9 @@ const ConfirmOrderScreen = () => {
         console.log('[VietQR][poll] error', e);
       }
     };
-    // run immediately once, then interval every 5 seconds
+    // run immediately once, then interval every 1 second
     await poll();
-    qrPollTimer.current = setInterval(poll, 5000);
+    qrPollTimer.current = setInterval(poll, 1000);
   };
 
   return (
