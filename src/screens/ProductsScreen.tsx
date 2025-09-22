@@ -18,6 +18,7 @@ import { RootStackParamList } from '../types/navigation';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import API_URL from '../config/api';
 import { getShopId, getAuthToken } from '../services/AuthStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface ProductUnit {
   unitName: string;
@@ -122,6 +123,8 @@ const ProductItem = memo(({ item, onEdit, onDelete }: {
   );
 });
 
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 const ProductsScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
@@ -185,11 +188,30 @@ const ProductsScreen = () => {
     };
   }, []);
 
-  const loadProducts = useCallback(async (showLoader: boolean) => {
+  const loadProducts = useCallback(async (showLoader: boolean, force: boolean = false) => {
     if (showLoader) setIsLoading(true);
     try {
       const shopId = (await getShopId()) ?? 0;
       const token = await getAuthToken();
+      const cacheKey = `products:${shopId}:v1`;
+
+      // Try cache first if not force
+      if (!force && shopId > 0) {
+        try {
+          const raw = await AsyncStorage.getItem(cacheKey);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const ts: number = Number(parsed?.ts || 0);
+            const items: Product[] = Array.isArray(parsed?.items) ? parsed.items : [];
+            const fresh = Date.now() - ts < CACHE_TTL_MS;
+            if (items.length && fresh) {
+              setProducts(items);
+              if (showLoader) setIsLoading(false);
+              return;
+            }
+          }
+        } catch {}
+      }
       const url = `${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=100`;
       const res = await fetch(url, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -237,6 +259,14 @@ const ProductsScreen = () => {
       } catch {}
 
       setProducts(mapped);
+
+      // Save cache
+      try {
+        if (shopId > 0) {
+          const cachePayload = JSON.stringify({ ts: Date.now(), items: mapped });
+          await AsyncStorage.setItem(cacheKey, cachePayload);
+        }
+      } catch {}
     } catch (e) {
       // ignore
     } finally {
@@ -245,12 +275,13 @@ const ProductsScreen = () => {
   }, []);
 
   useEffect(() => {
-    loadProducts(true);
+    // Load from cache or fetch if stale
+    loadProducts(true, false);
   }, [loadProducts]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadProducts(false);
+    await loadProducts(false, true); // force refresh
     setRefreshing(false);
   }, [loadProducts]);
 

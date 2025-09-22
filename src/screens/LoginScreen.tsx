@@ -19,7 +19,7 @@ import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types/navigation';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import API_URL from '../config/api';
-import { authStore } from '../services/AuthStore';
+import { authStore, setShiftId } from '../services/AuthStore';
 
 const LoginScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
@@ -97,6 +97,38 @@ const LoginScreen = () => {
           }
         } catch (e) {
           console.log('Failed to persist auth data:', e);
+        }
+        // Background: fetch current open shift and persist shiftId if exists
+        try {
+          const token = result?.data?.accessToken as string | undefined;
+          const shopId = Number(result?.data?.shopId ?? 0);
+          if (token && shopId > 0) {
+            const url = `${API_URL}/api/shifts?ShopId=${shopId}&page=1&pageSize=100`;
+            const res = await fetch(url, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+            });
+            const json = await res.json().catch(() => null);
+            const list = Array.isArray(json?.items)
+              ? json.items
+              : Array.isArray(json?.data?.items)
+              ? json.data.items
+              : Array.isArray(json?.data)
+              ? json.data
+              : Array.isArray(json)
+              ? json
+              : [];
+            const open = (list as any[]).find((it) => (it?.closedDate ?? it?.closeDate) == null);
+            const openId = Number(open?.shiftId ?? open?.id ?? 0);
+            if (openId > 0) {
+              await setShiftId(openId);
+            }
+          }
+        } catch (e) {
+          // silent
         }
         // On real devices, send FCM registration to backend; skip on emulator
         try {
