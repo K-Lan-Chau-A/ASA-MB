@@ -36,12 +36,49 @@ const AddOrderButton = () => {
 
   const handleOrderPress = useCallback(async () => {
     try {
-      const shiftId = (await getShiftId()) ?? 0;
-      if (!shiftId || Number(shiftId) <= 0) {
-        setOpenShiftVisible(true);
-        return;
+      const token = await getAuthToken();
+      const shopId = (await getShopId()) ?? 0;
+      // Query shifts to determine if there's an active (open) shift
+      const url = `${API_URL}/api/shifts?ShopId=${Number(shopId || 0)}&page=1&pageSize=50`;
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      const json = await res.json().catch(() => null);
+      const list = Array.isArray(json?.data?.items)
+        ? json.data.items
+        : Array.isArray(json?.data)
+        ? json.data
+        : Array.isArray(json)
+        ? json
+        : [];
+      // Find open shifts where closedDate (or closeDate) is null
+      const openShifts = (list as any[]).filter((it) => {
+        const closed = (it?.closedDate ?? it?.closeDate) ?? null;
+        return closed === null || closed === undefined;
+      });
+      if (openShifts.length > 0) {
+        // Pick the latest by shiftId if available, otherwise by startDate
+        const pickById = openShifts
+          .map((it) => ({
+            raw: it,
+            id: Number(it?.shiftId ?? it?.id ?? 0),
+            start: typeof it?.startDate === 'string' ? Date.parse(it.startDate) : 0,
+          }))
+          .sort((a, b) => (b.id || 0) - (a.id || 0) || (b.start || 0) - (a.start || 0));
+        const chosen = pickById[0];
+        const chosenId = Number(chosen?.id || 0);
+        if (chosenId > 0) {
+          await setShiftId(chosenId);
+          navigation.navigate('Order');
+          return;
+        }
       }
-      navigation.navigate('Order');
+      // No open shift found → prompt to open shift
+      setOpenShiftVisible(true);
     } catch {
       setOpenShiftVisible(true);
     }
@@ -81,7 +118,44 @@ const AddOrderButton = () => {
       setOpenShiftVisible(false);
       navigation.navigate('Order');
     } catch (e: any) {
-      Alert.alert('Lỗi', e?.message ?? 'Không thể mở ca');
+      // When shop already has an open shift, fetch the latest shift and use its id
+      const messageText = typeof e?.message === 'string' ? e.message : '';
+      const alreadyOpenHint = 'already has an open shift';
+      if (messageText.toLowerCase().includes(alreadyOpenHint)) {
+        try {
+          const token = await getAuthToken();
+          const shopId = (await getShopId()) ?? 0;
+          const url = `${API_URL}/api/shifts?ShopId=${Number(shopId || 0)}&page=1&pageSize=50`;
+          const res = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+          });
+          const json = await res.json().catch(() => null);
+          const list = Array.isArray(json?.data?.items)
+            ? json.data.items
+            : Array.isArray(json?.data)
+            ? json.data
+            : Array.isArray(json)
+            ? json
+            : [];
+          const ids: number[] = (list as any[]).map((it) => Number(it?.id ?? it?.shiftId ?? 0)).filter((n) => n > 0);
+          const latestId = ids.length ? Math.max(...ids) : 0;
+          if (latestId > 0) {
+            await setShiftId(latestId);
+            setOpenShiftVisible(false);
+            navigation.navigate('Order');
+          } else {
+            Alert.alert('Lỗi', 'Không tìm thấy ca đang mở');
+          }
+        } catch (innerErr: any) {
+          Alert.alert('Lỗi', innerErr?.message ?? 'Không thể lấy ca hiện tại');
+        }
+      } else {
+        Alert.alert('Lỗi', messageText || 'Không thể mở ca');
+      }
     } finally {
       setOpeningShiftSubmitting(false);
     }
