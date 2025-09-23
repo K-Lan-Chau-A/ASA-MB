@@ -4,13 +4,16 @@ export type RootStackParamList = {
   Notification: undefined;
   Scanner: undefined;
   ChatbotScreen: undefined;
+  OrderDetail: { orderId: number };
+  Customer: undefined;
   Order: { 
     scannedProduct?: { barcode: string; type?: string };
     newProduct?: { id: string; name: string; price: number; barcode: string };
     scanTimestamp?: number;
+    customer?: { id: number; fullName: string; phone?: string; email?: string };
     orderCompleted?: boolean;
   } | undefined;
-  AddProduct: { barcode?: string } | undefined;
+  AddProduct: { barcode?: string; product?: any } | undefined;
   ConfirmOrder: {
     products: Array<{
       id: string;
@@ -27,6 +30,7 @@ export type RootStackParamList = {
       selectedUnit: string;
     }>;
     totalAmount: number;
+    customerId?: number | null;
   };
   InvoicePreview: {
     invoiceData: {

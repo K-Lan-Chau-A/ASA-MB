@@ -10,6 +10,7 @@ import {
   Alert,
   TouchableWithoutFeedback,
   Keyboard,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, NavigationProp, RouteProp, useFocusEffect } from '@react-navigation/native';
@@ -36,6 +37,7 @@ interface Product {
   barcode?: string;
   units: ProductUnit[]; // Danh sách các đơn vị có sẵn
   selectedUnit: string; // Tên đơn vị hiện tại được chọn
+  imageUrl?: string;
 }
 
 type AvailableProduct = {
@@ -45,6 +47,7 @@ type AvailableProduct = {
   barcode?: string;
   units: Array<{ unitName: string; price: number; quantityInBaseUnit: number; isBaseUnit: boolean }>;
   selectedUnit: string;
+  imageUrl?: string;
 };
 
 // Memoized ProductItem component for better performance
@@ -59,7 +62,13 @@ const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast }: {
   
   return (
     <View style={styles.productItem}>
-      <View style={styles.productImage} />
+      <View style={styles.productImage}>
+        {item?.imageUrl ? (
+          <Image source={{ uri: item.imageUrl }} style={styles.productThumb} resizeMode="cover" />
+        ) : (
+          <Icon name="package-variant" size={24} color="#009DA5" />
+        )}
+      </View>
       <View style={styles.productInfo}>
         <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
         <Text style={styles.productPrice}>{item.price.toLocaleString('vi-VN')}đ</Text>
@@ -144,7 +153,13 @@ const AvailableProductItem = memo(({
     styles.availableProductItem,
     currentQuantity > 0 && styles.availableProductItemInCart
   ]}>
-    <View style={styles.productImage} />
+    <View style={styles.productImage}>
+      {item?.imageUrl ? (
+        <Image source={{ uri: item.imageUrl }} style={styles.productThumb} resizeMode="cover" />
+      ) : (
+        <Icon name="package-variant" size={24} color="#009DA5" />
+      )}
+    </View>
     <View style={styles.productInfo}>
       <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
       <Text style={styles.productPrice}>{item.price.toLocaleString('vi-VN')}đ</Text>
@@ -300,9 +315,9 @@ const OrderScreen = () => {
         // Create a complete product object with units
         const productToAdd = {
           ...foundProduct,
-          price: foundProduct.units[0].price, // Use base unit price
-          selectedUnit: foundProduct.units[0].unitName // Use base unit
-        };
+          price: foundProduct.units[0].price,
+          selectedUnit: foundProduct.units[0].unitName,
+        } as Product;
         addProduct(productToAdd);
       } else {
         // Product not found, automatically navigate to create new product
@@ -435,7 +450,8 @@ const OrderScreen = () => {
     // Navigate to ConfirmOrderScreen with order data
     navigation.navigate('ConfirmOrder', {
       products: products,
-      totalAmount: totalAmount
+      totalAmount: totalAmount,
+      customerId: route.params?.customer?.id ?? null,
     });
   };
 
@@ -579,6 +595,7 @@ const OrderScreen = () => {
             name: String(p.productName ?? p.name ?? 'Sản phẩm'),
             price: Number(p.price ?? 0),
             barcode: p.barcode ? String(p.barcode) : undefined,
+            imageUrl: p.imageUrl ? String(p.imageUrl) : undefined,
             units,
             selectedUnit,
           };
@@ -687,11 +704,11 @@ const OrderScreen = () => {
       {/* Customer and Order Type - Only show when not searching */}
       {!showAvailableProducts && (
         <View style={styles.customerSection}>
-          <View style={styles.customerRow}>
+          <TouchableOpacity style={styles.customerRow} onPress={() => navigation.navigate('Customer')}>
             <Text style={styles.label}>Khách hàng:</Text>
-            <Text style={styles.label}>Khách lẻ</Text>
+            <Text style={styles.label}>{route.params?.customer?.fullName ?? 'Khách lẻ'}</Text>
             <Icon name="chevron-right" size={20} color="#666" />
-          </View>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -826,6 +843,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5E5E5',
     borderRadius: 8,
     marginRight: 12,
+  },
+  productThumb: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
   },
   productInfo: {
     flex: 1,

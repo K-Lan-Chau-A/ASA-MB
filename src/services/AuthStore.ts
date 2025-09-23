@@ -14,6 +14,7 @@ export type AuthData = {
 };
 
 const STORAGE_KEY = 'auth:data:v1';
+const CREDS_KEY = 'auth:creds:v1';
 
 export const authStore = {
   async save(data: AuthData): Promise<void> {
@@ -105,5 +106,30 @@ export const refreshOpenShiftId = async (): Promise<number | null> => {
   } catch {
     return null;
   }
+};
+
+// Simple credential storage (for demo). Consider using a secure storage in production.
+export type SavedCredentials = { username: string; password: string; remember: boolean };
+
+export const saveCredentials = async (creds: SavedCredentials): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(CREDS_KEY, JSON.stringify(creds));
+  } catch {}
+};
+
+export const loadCredentials = async (): Promise<SavedCredentials | null> => {
+  try {
+    const raw = await AsyncStorage.getItem(CREDS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.username === 'string') return parsed as SavedCredentials;
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+export const clearCredentials = async (): Promise<void> => {
+  try { await AsyncStorage.removeItem(CREDS_KEY); } catch {}
 };
 

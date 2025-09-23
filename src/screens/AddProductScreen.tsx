@@ -49,17 +49,21 @@ const AddProductScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'AddProduct'>>();
   const [shopId, setShopId] = useState<number>(0);
+  const isEditing = Boolean((route.params as any)?.product?.id);
+  const editingId = (route.params as any)?.product?.id ? String((route.params as any).product.id) : '';
   
   const [product, setProduct] = useState<NewProduct>({
-    barcode: route.params?.barcode || '',
-    name: '',
-    category: '',
-    importPrice: '',
-    sellPrice: '',
-    unit: '',
-    quantity: '',
+    barcode: route.params?.product?.barcode || route.params?.barcode || '',
+    name: route.params?.product?.name || '',
+    category: route.params?.product?.category || '',
+    importPrice: route.params?.product?.cost != null && !isNaN(Number(route.params?.product?.cost))
+      ? Number(route.params?.product?.cost).toLocaleString('vi-VN')
+      : '',
+    sellPrice: route.params?.product?.price ? String(route.params?.product?.price) : '',
+    unit: route.params?.product?.selectedUnit || '',
+    quantity: route.params?.product?.quantity ? String(route.params?.product?.quantity) : '',
     discount: '0',
-    image: '',
+    image: route.params?.product?.imageUrl || '',
     description: '',
   });
 
@@ -68,8 +72,12 @@ const AddProductScreen = () => {
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [showUnitDropdown, setShowUnitDropdown] = useState(false);
-  const [baseUnit, setBaseUnit] = useState('');
-const [additionalUnits, setAdditionalUnits] = useState<Array<{ unitName: string; conversionRate: number }>>([]);
+  const [baseUnit, setBaseUnit] = useState(route.params?.product?.units?.find?.((u: any)=>u.isBaseUnit)?.unitName || '');
+const [additionalUnits, setAdditionalUnits] = useState<Array<{ unitName: string; conversionRate: number }>>(
+  (route.params?.product?.units || [])
+    .filter((u: any) => !u.isBaseUnit)
+    .map((u: any) => ({ unitName: String(u.unitName || u.name || ''), conversionRate: Number(u.quantityInBaseUnit || u.conversionFactor || 0) }))
+);
 const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
   const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -151,6 +159,38 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
     };
     fetchAll();
   }, []);
+
+  // Fetch cost when editing if not provided
+  useEffect(() => {
+    const loadCost = async () => {
+      try {
+        if (!(route.params as any)?.product?.id) return;
+        const pid = String((route.params as any).product.id);
+        if (!shopId) return;
+        if ((product.importPrice || '').trim() !== '') return;
+        const token = await getAuthToken();
+        const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&ProductId=${pid}&page=1&pageSize=1`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        const data = await res.json().catch(() => null);
+        const items: any[] = Array.isArray(data?.items)
+          ? data.items
+          : Array.isArray(data?.data?.items)
+          ? data.data.items
+          : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data)
+          ? data
+          : [];
+        const found: any = items[0] || null;
+        const cost = Number(found?.cost ?? 0);
+        if (!isNaN(cost) && cost > 0) {
+          setProduct(prev => ({ ...prev, importPrice: cost.toLocaleString('vi-VN') }));
+        }
+      } catch {}
+    };
+    loadCost();
+  }, [route.params, shopId, product.importPrice]);
 
 
   const handleCreateCategory = useCallback(async () => {
@@ -280,12 +320,15 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
       form.append('Status', String(1));
       // Units as JSON array (server parses stringified JSON)
       form.append('Units', JSON.stringify(unitsPayload));
-      // InventoryTransaction.* as nested fields
-      form.append('InventoryTransaction.Quantity', String(parsedQuantity));
-      form.append('InventoryTransaction.Price', String(importPrice));
+      if (!isEditing) {
+        // InventoryTransaction fields only when creating
+        form.append('InventoryTransaction.Quantity', String(parsedQuantity));
+        form.append('InventoryTransaction.Price', String(importPrice));
+      }
 
       // Attach product image file if available (optional)
-      if ((product.image || '').trim()) {
+      const hasLocalImage = (product.image || '').trim() && !/^https?:\/\//i.test(product.image.trim());
+      if ((product.image || '').trim() && (!isEditing || hasLocalImage)) {
         const uri = product.image.trim();
         const name = uri.split('/').pop() || 'image.jpg';
         const ext = (name.split('.').pop() || 'jpg').toLowerCase();
@@ -296,17 +339,34 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
           name,
           type,
         } as any);
-        // Image for inventory transaction (optional mirror)
-        form.append('InventoryTransaction.ImageFile', {
-          uri,
-          name: `inventory_${name}`,
-          type,
-        } as any);
+        if (!isEditing) {
+          form.append('InventoryTransaction.ImageFile', {
+            uri,
+            name: `inventory_${name}`,
+            type,
+          } as any);
+        }
       }
 
       const token = await getAuthToken();
-      const res = await fetch(`${API_URL}/api/products`, {
-        method: 'POST',
+      const url = isEditing ? `${API_URL}/api/products/${editingId}` : `${API_URL}/api/products`;
+      const method = isEditing ? 'PUT' : 'POST';
+      try {
+        console.log('[ProductSave] isEditing:', isEditing, 'editingId:', editingId);
+        console.log('[ProductSave] url:', url, 'method:', method);
+        console.log('[ProductSave] summary:', {
+          name: product.name,
+          barcode: product.barcode,
+          category: product.category,
+          sellPrice,
+          importPrice,
+          baseUnit,
+          additionalUnitsCount: additionalUnits.length,
+          hasImage: Boolean(product.image),
+        } as any);
+      } catch {}
+      const res = await fetch(url, {
+        method: method as any,
         headers: {
           // Let fetch set proper multipart boundary automatically
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -316,14 +376,17 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
 
       const result = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const msg = result?.message || 'Không thể tạo sản phẩm';
+        try { console.log('[ProductSave] HTTP', res.status, res.statusText, result); } catch {}
+        const msg = result?.message || (isEditing ? 'Không thể cập nhật sản phẩm' : 'Không thể tạo sản phẩm');
         Alert.alert('Lỗi', msg);
         return;
       }
 
+      try { console.log('[ProductSave] success:', result); } catch {}
+
       Alert.alert(
         'Thành công',
-        'Sản phẩm đã được thêm thành công!',
+        isEditing ? 'Đã cập nhật sản phẩm!' : 'Sản phẩm đã được thêm thành công!',
         [
           {
             text: 'OK',
@@ -338,7 +401,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
     } finally {
       setIsSaving(false);
     }
-  }, [product, baseUnit, additionalUnits, navigation]);
+  }, [product, baseUnit, additionalUnits, navigation, isEditing, editingId, categories, shopId]);
 
   const handleCancel = useCallback(() => {
     // Simply go back without adding any product
@@ -353,7 +416,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         <TouchableOpacity onPress={handleCancel}>
           <Icon name="close" size={24} color="#000" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Thêm sản phẩm</Text>
+        <Text style={styles.headerTitle}>{isEditing ? 'Sửa sản phẩm' : 'Thêm sản phẩm'}</Text>
         <View style={{ width: 24 }} />
       </View>
 

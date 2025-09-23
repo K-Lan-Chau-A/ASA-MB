@@ -11,6 +11,8 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  Image,
+  Modal,
 } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -37,6 +39,7 @@ interface Product {
   category?: string;
   quantity?: number;
   lastUpdated?: string;
+  imageUrl?: string;
 }
 
 // Remote products will be loaded from API
@@ -48,6 +51,8 @@ const ProductItem = memo(({ item, onEdit, onDelete }: {
   onDelete: (product: Product) => void;
 }) => {
   const [showActions, setShowActions] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number; width: number; height: number }>({ x: 0, y: 0, width: 0, height: 0 });
+  const actionBtnRef = React.useRef<View>(null);
   
   const getStockStatus = (quantity?: number) => {
     if (!quantity) return { text: 'Không xác định số lượng', color: '#999' };
@@ -60,9 +65,13 @@ const ProductItem = memo(({ item, onEdit, onDelete }: {
 
   return (
     <View style={styles.productItem}>
-      <View style={styles.productImage}>
+    <View style={styles.productImage}>
+      {item.imageUrl ? (
+        <Image source={{ uri: item.imageUrl }} style={styles.productThumb} resizeMode="cover" />
+      ) : (
         <Icon name="package-variant" size={24} color="#009DA5" />
-      </View>
+      )}
+    </View>
       
       <View style={styles.productInfo}>
         <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
@@ -88,35 +97,53 @@ const ProductItem = memo(({ item, onEdit, onDelete }: {
       
       <View style={styles.productActions}>
         <TouchableOpacity 
+          ref={actionBtnRef}
           style={styles.actionButton}
-          onPress={() => setShowActions(!showActions)}
+          onPress={() => {
+            try {
+              actionBtnRef.current?.measureInWindow((x, y, width, height) => {
+                setMenuPos({ x, y, width, height });
+                setShowActions(true);
+              });
+            } catch {
+              setShowActions(true);
+            }
+          }}
         >
           <Icon name="dots-vertical" size={20} color="#666" />
         </TouchableOpacity>
         
         {showActions && (
-          <View style={styles.actionsDropdown}>
-            <TouchableOpacity 
-              style={styles.actionItem}
-              onPress={() => {
-                onEdit(item);
-                setShowActions(false);
-              }}
-            >
-              <Icon name="pencil" size={16} color="#009DA5" />
-              <Text style={styles.actionText}>Sửa</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.actionItem}
-              onPress={() => {
-                onDelete(item);
-                setShowActions(false);
-              }}
-            >
-              <Icon name="delete" size={16} color="#FF6B6B" />
-              <Text style={[styles.actionText, { color: '#FF6B6B' }]}>Xóa</Text>
-            </TouchableOpacity>
-          </View>
+          <Modal transparent animationType="fade" visible onRequestClose={() => setShowActions(false)}>
+            <TouchableWithoutFeedback onPress={() => setShowActions(false)}>
+              <View style={styles.actionsModalOverlay}>
+                <TouchableWithoutFeedback>
+                  <View style={[styles.actionsModalCard, { position: 'absolute', top: menuPos.y + menuPos.height + 4, left: Math.max(8, menuPos.x - 120 + menuPos.width) }]}>
+                    <TouchableOpacity 
+                      style={styles.actionItem}
+                      onPress={() => {
+                        onEdit(item);
+                        setShowActions(false);
+                      }}
+                    >
+                      <Icon name="pencil" size={16} color="#009DA5" />
+                      <Text style={styles.actionText}>Sửa</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={styles.actionItem}
+                      onPress={() => {
+                        onDelete(item);
+                        setShowActions(false);
+                      }}
+                    >
+                      <Icon name="delete" size={16} color="#FF6B6B" />
+                      <Text style={[styles.actionText, { color: '#FF6B6B' }]}>Xóa</Text>
+                    </TouchableOpacity>
+                  </View>
+                </TouchableWithoutFeedback>
+              </View>
+            </TouchableWithoutFeedback>
+          </Modal>
         )}
       </View>
     </View>
@@ -226,6 +253,7 @@ const ProductsScreen = () => {
         category: String(p.categoryName ?? p.category?.categoryName ?? ''),
         quantity: typeof p.quantity === 'number' ? p.quantity : (typeof p.stock === 'number' ? p.stock : undefined),
         lastUpdated: p.updateAt ? String(p.updateAt).slice(0, 10) : (p.updatedAt ? String(p.updatedAt).slice(0,10) : undefined),
+        imageUrl: p.imageUrl ? String(p.imageUrl) : undefined,
         units: [],
         selectedUnit: 'Cái',
       }));
@@ -314,10 +342,14 @@ const ProductsScreen = () => {
     navigation.navigate('AddProduct');
   }, [navigation]);
 
+  const handleScanBarcode = useCallback(() => {
+    navigation.navigate('Scanner');
+  }, [navigation]);
+
   const handleEditProduct = useCallback((product: Product) => {
-    // TODO: Navigate to edit product screen
-    Alert.alert('Thông báo', `Chỉnh sửa sản phẩm: ${product.name}`);
-  }, []);
+    // Navigate to AddProduct with prefilled product data
+    navigation.navigate('AddProduct', { product: product });
+  }, [navigation]);
 
   const handleDeleteProduct = useCallback((product: Product) => {
     Alert.alert(
@@ -386,7 +418,7 @@ const ProductsScreen = () => {
                 <TextInput
                   ref={searchInputRef}
                   style={styles.searchInput}
-                  placeholder="Tìm kiếm sản phẩm, mã vạch..."
+                  placeholder="Tìm sản phẩm, mã vạch..."
                   value={searchText}
                   onChangeText={handleSearchChange}
                   onFocus={handleSearchFocus}
@@ -401,6 +433,9 @@ const ProductsScreen = () => {
                 )}
               </View>
             </TouchableWithoutFeedback>
+            <TouchableOpacity style={styles.qrButton} onPress={handleScanBarcode}>
+              <Icon name="qrcode-scan" size={20} color="#009DA5" />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.addButton} onPress={handleAddProduct}>
               <Icon name="plus" size={20} color="#FFFFFF" />
               <Text style={styles.addButtonText}>Thêm</Text>
@@ -498,10 +533,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#009DA5',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     borderRadius: 6,
-    gap: 4,
+    gap: 6,
   },
   searchRow: {
     flexDirection: 'row',
@@ -514,6 +549,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  qrButton: {
+    padding: 8,
+    borderRadius: 6,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -601,6 +640,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  productThumb: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+  },
   productInfo: {
     flex: 1,
     marginRight: 12,
@@ -661,6 +705,8 @@ const styles = StyleSheet.create({
   productActions: {
     position: 'relative',
   },
+  actionsModalOverlay: { flex: 1, backgroundColor: 'transparent', justifyContent: 'flex-start', alignItems: 'flex-start' },
+  actionsModalCard: { backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#E5E5E5', paddingVertical: 6, minWidth: 160, elevation: 8 },
   actionButton: {
     padding: 8,
   },

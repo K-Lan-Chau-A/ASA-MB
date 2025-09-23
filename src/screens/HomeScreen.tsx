@@ -1,18 +1,61 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions } from 'react-native';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
+import API_URL from '../config/api';
+import { getAuthToken, getShopId, getShiftId, refreshOpenShiftId } from '../services/AuthStore';
 
 const HomeScreen = () => {
   const [hideMoney, setHideMoney] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [todayInfo, setTodayInfo] = useState({ dateLabel: 'Hôm nay', invoices: 0, revenue: 0 });
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Mock stats data
-  const todayInfo = {
-    dateLabel: 'Hôm nay',
-    invoices: 12,
-    revenue: 27632000,
-  };
+  const loadShiftStats = useCallback(async () => {
+    try {
+      setLoading(true);
+      const token = await getAuthToken();
+      const shopId = (await getShopId()) ?? 0;
+      if (!token || !shopId) {
+        setTodayInfo({ dateLabel: 'Hôm nay', invoices: 0, revenue: 0 });
+        return;
+      }
+      let shiftId = await getShiftId();
+      if (!shiftId) {
+        shiftId = await refreshOpenShiftId();
+      }
+      if (!shiftId) {
+        setTodayInfo({ dateLabel: 'Hôm nay', invoices: 0, revenue: 0 });
+        return;
+      }
+      const res = await fetch(`${API_URL}/api/orders?ShopId=${shopId}&ShiftId=${shiftId}&page=1&pageSize=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => null);
+      const items: any[] = Array.isArray(json?.items)
+        ? json.items
+        : Array.isArray(json?.data?.items)
+        ? json.data.items
+        : Array.isArray(json?.data)
+        ? json.data
+        : Array.isArray(json)
+        ? json
+        : [];
+      const successful = items.filter((o: any) => Number(o?.status ?? 0) === 1);
+      const invoices = successful.length;
+      const revenue = successful.reduce((sum: number, o: any) => sum + Number(o?.totalPrice ?? o?.totalAmount ?? 0), 0);
+      setTodayInfo({ dateLabel: 'Hôm nay', invoices, revenue });
+    } catch {
+      setTodayInfo({ dateLabel: 'Hôm nay', invoices: 0, revenue: 0 });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadShiftStats();
+  }, [loadShiftStats]);
 
   // Removed charts: keep only summary cards
 
@@ -57,7 +100,11 @@ const HomeScreen = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom','left','right']}>
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await loadShiftStats(); setRefreshing(false); }} />}
+      >
 
         {/* Today row */}
         <View style={styles.todayRow}>

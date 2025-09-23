@@ -11,8 +11,10 @@ import ScannerScreen from './src/screens/ScannerScreen';
 import OrderScreen from './src/screens/OrderScreen';
 import ConfirmOrderScreen from './src/screens/ConfirmOrderScreen';
 import InvoicePreviewScreen from './src/screens/InvoicePreviewScreen';
+import OrderDetailScreen from './src/screens/OrderDetailScreen';
 import AddProductScreen from './src/screens/AddProductScreen';
 import ChatbotScreen from './src/screens/ChatbotScreen';
+import CustomerScreen from './src/screens/CustomerScreen';
 import { useNotification } from './src/hooks/useNotification';
 
 const Stack = createNativeStackNavigator();
@@ -74,6 +76,14 @@ function App() {
           }}
         />
         <Stack.Screen 
+          name="OrderDetail" 
+          component={OrderDetailScreen}
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right'
+          }}
+        />
+        <Stack.Screen 
           name="AddProduct" 
           component={AddProductScreen}
           options={{
@@ -84,6 +94,14 @@ function App() {
         <Stack.Screen 
           name="ChatbotScreen" 
           component={ChatbotScreen}
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right'
+          }}
+        />
+        <Stack.Screen 
+          name="Customer" 
+          component={CustomerScreen}
           options={{
             headerShown: false,
             animation: 'slide_from_right'

@@ -19,7 +19,7 @@ import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types/navigation';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import API_URL from '../config/api';
-import { authStore, setShiftId } from '../services/AuthStore';
+import { authStore, setShiftId, saveCredentials, loadCredentials, clearCredentials } from '../services/AuthStore';
 
 const LoginScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
@@ -28,6 +28,8 @@ const LoginScreen = () => {
   const [isEmulator, setIsEmulator] = useState<boolean | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [booting, setBooting] = useState(true);
+  const [remember, setRemember] = useState(false);
   const { fcmToken, loading } = useFCMToken();
 
   useEffect(() => {
@@ -55,32 +57,48 @@ const LoginScreen = () => {
     };
 
     checkDeviceAndInitFCM();
+    // Auto-redirect if token exists, else try saved creds. Hide form until done.
+    (async () => {
+      try {
+        const session = await authStore.load();
+        if (session?.accessToken) {
+          navigation.reset({ index: 0, routes: [{ name: 'MainApp' }] });
+          return;
+        }
+        const creds = await loadCredentials();
+        if (creds?.remember && creds.username && creds.password) {
+          setUsername(creds.username || '');
+          setPassword(creds.password || '');
+          setRemember(true);
+          try { await handleLoginInternal(creds.username, creds.password, true); return; } catch {}
+        }
+      } finally {
+        setBooting(false);
+      }
+    })();
   }, []);
 
-  const handleLogin = async () => {
-    if (!username || !password) {
-      Alert.alert('Lỗi', 'Vui lòng nhập tên đăng nhập và mật khẩu.');
+  const handleLoginInternal = async (u: string, p: string, silent?: boolean) => {
+    if (!u || !p) {
+      if (!silent) Alert.alert('Lỗi', 'Vui lòng nhập tên đăng nhập và mật khẩu.');
       return;
     }
-
-    setIsLoading(true);
-
+    if (!silent) setIsLoading(true);
     try {
       const response = await fetch(`${API_URL}/api/authentication/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          username,
-          password,
-        }),
+        body: JSON.stringify({ username: u, password: p }),
       });
-
       const result = await response.json();
-
       if (result.success) {
-        // Persist auth data for later use (shopId, token, user info)
+        if (remember) {
+          await saveCredentials({ username: u, password: p, remember: true });
+        } else {
+          await clearCredentials();
+        }
         try {
           if (result?.data?.accessToken) {
             await authStore.save({
@@ -95,80 +113,50 @@ const LoginScreen = () => {
               accessToken: result?.data?.accessToken,
             });
           }
-        } catch (e) {
-          console.log('Failed to persist auth data:', e);
-        }
-        // Background: fetch current open shift and persist shiftId if exists
+        } catch (e) {}
         try {
           const token = result?.data?.accessToken as string | undefined;
           const shopId = Number(result?.data?.shopId ?? 0);
           if (token && shopId > 0) {
             const url = `${API_URL}/api/shifts?ShopId=${shopId}&page=1&pageSize=100`;
-            const res = await fetch(url, {
-              method: 'GET',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-              },
-            });
+            const res = await fetch(url, { method: 'GET', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } });
             const json = await res.json().catch(() => null);
-            const list = Array.isArray(json?.items)
-              ? json.items
-              : Array.isArray(json?.data?.items)
-              ? json.data.items
-              : Array.isArray(json?.data)
-              ? json.data
-              : Array.isArray(json)
-              ? json
-              : [];
+            const list = Array.isArray(json?.items) ? json.items : Array.isArray(json?.data?.items) ? json.data.items : Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
             const open = (list as any[]).find((it) => (it?.closedDate ?? it?.closeDate) == null);
             const openId = Number(open?.shiftId ?? open?.id ?? 0);
-            if (openId > 0) {
-              await setShiftId(openId);
-            }
+            if (openId > 0) await setShiftId(openId);
           }
-        } catch (e) {
-          // silent
-        }
-        // On real devices, send FCM registration to backend; skip on emulator
-        try {
-          if (!isEmulator) {
-            const tokenToSend = fcmToken || (await fcmService.getFCMToken().catch(() => null));
-            if (tokenToSend) {
-              const derivedUserId =
-                (typeof result?.userId === 'number' && result.userId) ??
-                (typeof result?.data?.userId === 'number' && result.data.userId) ??
-                0;
-              await fetch(`${API_URL}/api/Fcm`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  userId: derivedUserId,
-                  fcmToken: tokenToSend,
-                  uniqueId: null,
-                }),
-              });
+        } catch {}
+        // Skip FCM registration on auto-login silent path
+        if (!silent) {
+          try {
+            if (!isEmulator) {
+              const tokenToSend = fcmToken || (await fcmService.getFCMToken().catch(() => null));
+              if (tokenToSend) {
+                const derivedUserId = (typeof result?.userId === 'number' && result.userId) ?? (typeof result?.data?.userId === 'number' && result.data.userId) ?? 0;
+                await fetch(`${API_URL}/api/Fcm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: derivedUserId, fcmToken: tokenToSend, uniqueId: null }) });
+              }
             }
-          }
-        } catch (e) {
-          console.log('Failed to send FCM info:', e);
+          } catch {}
         }
-
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'MainApp' }],
-        });
-      } else {
+        navigation.reset({ index: 0, routes: [{ name: 'MainApp' }] });
+      } else if (!silent) {
         const errorMessage = result.message === 'Invalid Username or Password' ? 'Sai tên đăng nhập hoặc mật khẩu' : result.message;
         Alert.alert('Lỗi', errorMessage);
       }
     } catch (error) {
-      Alert.alert('Lỗi', 'Đã xảy ra lỗi. Vui lòng thử lại sau.');
+      if (!silent) Alert.alert('Lỗi', 'Đã xảy ra lỗi. Vui lòng thử lại sau.');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
+  };
+
+  const handleLogin = async () => {
+    if (!username || !password) {
+      Alert.alert('Lỗi', 'Vui lòng nhập tên đăng nhập và mật khẩu.');
+      return;
+    }
+    await handleLoginInternal(username, password);
   };
 
   return (
@@ -177,6 +165,11 @@ const LoginScreen = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.content}
       >
+        {(booting || isLoading) && (
+          <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 10, backgroundColor: '#FFFFFF' }}>
+            <ActivityIndicator size="large" color="#009DA5" />
+          </View>
+        )}
         <View style={styles.logoContainer}>
           <Image
             source={require('../assets/images/asianUnicorn.png')}
@@ -208,7 +201,7 @@ const LoginScreen = () => {
 
           <View style={styles.rememberContainer}>
             <View style={styles.checkboxContainer}>
-              <TouchableOpacity style={styles.checkbox} />
+              <TouchableOpacity style={[styles.checkbox, remember && { backgroundColor: '#009DA5' }]} onPress={() => setRemember((v) => !v)} />
               <Text style={styles.rememberText}>Ghi nhớ đăng nhập</Text>
             </View>
             <TouchableOpacity>

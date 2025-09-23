@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Dimensions,
   Image,
 } from 'react-native';
+import { ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -19,6 +20,7 @@ import { clearGlobalOrderState } from './OrderScreen';
 import { Picker } from '@react-native-picker/picker';
 import API_URL from '../config/api';
 import { getAuthToken, getShopId, getShiftId } from '../services/AuthStore';
+import Tts from 'react-native-tts';
 
 interface Product {
   id: string;
@@ -35,6 +37,7 @@ interface Product {
     unitId?: number;
   }>;
   selectedUnit: string;
+  imageUrl?: string;
 }
 
 type PaymentMethod = 'cash' | 'bank_transfer' | 'nfc_card';
@@ -44,6 +47,7 @@ const ConfirmOrderScreen = () => {
   const route = useRoute<RouteProp<RootStackParamList, 'ConfirmOrder'>>();
   
   const { products, totalAmount: originalTotal } = route.params;
+  const selectedCustomerId = (route.params as any)?.customerId ?? (route.params as any)?.customer?.id ?? null;
   
   // Discount states
   const [promoCode, setPromoCode] = useState('');
@@ -156,6 +160,7 @@ const ConfirmOrderScreen = () => {
         discount: appliedDiscount > 0 ? Number(appliedDiscount) : null,
         note: (promoCode || discountReason) ? [promoCode ? `Mã: ${promoCode}` : '', discountReason ? `Lý do: ${discountReason}` : ''].filter(Boolean).join(' | ') : null,
         orderDetails,
+        ...(selectedCustomerId ? { customerId: Number(selectedCustomerId) } : {}),
       };
 
       try {
@@ -205,7 +210,7 @@ const ConfirmOrderScreen = () => {
           // Cash payment - show success modal
           // Verify it appears in list
           try {
-            const verifyRes = await fetch(`${API_URL}/api/orders?ShopId=${shopId}&page=1&pageSize=10`, {
+            const verifyRes = await fetch(`${API_URL}/api/orders?ShopId=${shopId}&page=1&pageSize=100`, {
               headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
             const verifyData = await verifyRes.json();
@@ -289,7 +294,9 @@ const ConfirmOrderScreen = () => {
     
     // For all payment methods, create order first, then show appropriate modal
     if (selectedPaymentMethod === 'bank_transfer') {
-      // Create order first, then show QR modal
+      // Immediately open QR modal with spinner, then create order and load QR
+      setShowQRModal(true);
+      setQrData(null);
       submitOrder();
     } else if (selectedPaymentMethod === 'nfc_card') {
       // Create order first, then show NFC modal
@@ -428,6 +435,30 @@ const ConfirmOrderScreen = () => {
 
   const invoiceData = generateInvoiceData();
 
+  // Speak when success modal is shown
+  useEffect(() => {
+    if (showSuccessModal) {
+      const amountNumber = Number(invoiceData?.totalAmount ?? finalTotal) || 0;
+      const text = `Thanh toán thành công ${amountNumber.toLocaleString('vi-VN')} đồng`;
+      (async () => {
+        try {
+          try { await Tts.setDefaultLanguage('vi-VN'); } catch {}
+          await Tts.stop();
+          await Tts.speak(text);
+        } catch {}
+      })();
+    } else {
+      try { Tts.stop(); } catch {}
+    }
+  }, [showSuccessModal]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      try { Tts.stop(); } catch {}
+    };
+  }, []);
+
   const startPollOrderPaidStatus = async (orderId: number) => {
     if (!orderId) return;
     // clear any existing poller
@@ -440,7 +471,7 @@ const ConfirmOrderScreen = () => {
     const poll = async () => {
       try {
         console.log('[VietQR][poll] checking orderId', orderId, 'shopId', shopId);
-        const res = await fetch(`${API_URL}/api/orders?ShopId=${shopId}&page=1&pageSize=10`, {
+        const res = await fetch(`${API_URL}/api/orders?ShopId=${shopId}&page=1&pageSize=100`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         
@@ -691,8 +722,12 @@ const ConfirmOrderScreen = () => {
           }}>
             <Text style={styles.cancelButtonText}>Hủy</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.payButton} onPress={handlePayment}>
-            <Text style={styles.payButtonText}>Đồng ý</Text>
+          <TouchableOpacity style={[styles.payButton, isSubmitting && { opacity: 0.7 }]} onPress={handlePayment} disabled={isSubmitting}>
+            {isSubmitting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.payButtonText}>Đồng ý</Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -722,17 +757,9 @@ const ConfirmOrderScreen = () => {
                     resizeMode="contain"
                   />
                 ) : (
-                  <View style={styles.qrCodePlaceholder}>
-                    <View style={styles.qrCodeGrid}>
-                      {Array.from({ length: 25 }, (_, i) => (
-                        <View key={i} style={[styles.qrCodeDot, { opacity: Math.random() > 0.3 ? 1 : 0.3 }]} />
-                      ))}
-                    </View>
-                    <View style={styles.qrCodeOverlay}>
-                      <View style={styles.qrCodeVContainer}>
-                        <Text style={styles.qrCodeV}>V</Text>
-                      </View>
-                    </View>
+                  <View style={[styles.qrCodePlaceholder, { justifyContent: 'center', alignItems: 'center' }]}>
+                    <ActivityIndicator size="large" color="#009DA5" />
+                    <Text style={{ marginTop: 12, color: '#666' }}>Đang tạo mã QR...</Text>
                   </View>
                 )}
               </View>

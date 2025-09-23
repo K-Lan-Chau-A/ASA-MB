@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, ScrollView, TextInput, Keyboard, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, ScrollView, TextInput, Keyboard, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Picker } from '@react-native-picker/picker';
+import API_URL from '../config/api';
+import { getAuthToken, getShopId } from '../services/AuthStore';
 
 interface BillItem {
   id: string;
@@ -13,8 +15,13 @@ interface BillItem {
   time: string;
   total: number;
   paymentMethod: 'cash' | 'bank_transfer' | 'nfc';
-  discount?: { amount: number; reason?: string };
-  products: Array<{ name: string; qty: number; price: number; unit?: string }>;
+}
+
+interface ShiftItem {
+  id: number;
+  name?: string;
+  openedDate?: string | null;
+  closedDate?: string | null;
 }
 
 const BillsScreen = () => {
@@ -22,168 +29,165 @@ const BillsScreen = () => {
   const insets = useSafeAreaInsets();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [selected, setSelected] = useState<BillItem | null>(null);
+  const [selectedDetails, setSelectedDetails] = useState<Array<{ name: string; qty: number; price: number; unit?: string }>>([]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'cancel'>('all');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
-  const [selectedShift, setSelectedShift] = useState('7h-15h');
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
 
-  const shifts = [
-    { label: 'Ca 7h-15h 2/7/2025', value: '7h-15h' },
-    { label: 'Ca 15h-23h 2/7/2025', value: '15h-23h' },
-    { label: 'Ca 23h-7h 3/7/2025', value: '23h-7h' },
-  ];
+  const [shifts, setShifts] = useState<ShiftItem[]>([]);
+  const [selectedShiftId, setSelectedShiftId] = useState<number | null>(null);
+  const [orders, setOrders] = useState<BillItem[]>([]);
 
-  const bills = useMemo<BillItem[]>(() => ([
-    {
-      id: '1',
-      code: '#123',
-      status: 'success',
-      buyer: 'Khách lẻ',
-      time: '13:45, 2 tháng 7, 2025',
-      total: 110000,
-      paymentMethod: 'cash',
-      discount: { amount: 10000, reason: 'Khuyến mãi thành viên' },
-      products: [
-        { name: 'Coca Cola', qty: 2, price: 15000, unit: 'Chai' },
-        { name: 'Bánh gạo', qty: 1, price: 90000, unit: 'Gói' },
-      ],
-    },
-    {
-      id: '2',
-      code: '#122',
-      status: 'cancel',
-      buyer: 'Khách lẻ',
-      time: '12:29, 2 tháng 7, 2025',
-      total: 36000,
-      paymentMethod: 'bank_transfer',
-      products: [
-        { name: 'Cà phê đen', qty: 2, price: 18000, unit: 'Ly' },
-      ],
-    },
-    {
-      id: '3',
-      code: '#124',
-      status: 'success',
-      buyer: 'Khách lẻ',
-      time: '14:00, 2 tháng 7, 2025',
-      total: 50000,
-      paymentMethod: 'nfc',
-      products: [
-        { name: 'Bánh mì', qty: 1, price: 50000, unit: 'Ổ' },
-      ],
-    },
-    {
-      id: '4',
-      code: '#125',
-      status: 'cancel',
-      buyer: 'Khách lẻ',
-      time: '15:30, 2 tháng 7, 2025',
-      total: 20000,
-      paymentMethod: 'cash',
-      products: [
-        { name: 'Nước suối', qty: 2, price: 10000, unit: 'Chai' },
-      ],
-    },
-    {
-      id: '5',
-      code: '#126',
-      status: 'success',
-      buyer: 'Khách lẻ',
-      time: '16:00, 2 tháng 7, 2025',
-      total: 75000,
-      paymentMethod: 'bank_transfer',
-      products: [
-        { name: 'Trà sữa', qty: 3, price: 25000, unit: 'Ly' },
-      ],
-    },
-    {
-      id: '6',
-      code: '#127',
-      status: 'success',
-      buyer: 'Khách lẻ',
-      time: '17:00, 2 tháng 7, 2025',
-      total: 30000,
-      paymentMethod: 'cash',
-      products: [
-        { name: 'Bánh ngọt', qty: 2, price: 15000, unit: 'Cái' },
-      ],
-    },
-    {
-      id: '7',
-      code: '#128',
-      status: 'cancel',
-      buyer: 'Khách lẻ',
-      time: '18:00, 2 tháng 7, 2025',
-      total: 45000,
-      paymentMethod: 'nfc',
-      products: [
-        { name: 'Kem', qty: 3, price: 15000, unit: 'Cây' },
-      ],
-    },
-    {
-      id: '8',
-      code: '#129',
-      status: 'success',
-      buyer: 'Khách lẻ',
-      time: '19:00, 2 tháng 7, 2025',
-      total: 60000,
-      paymentMethod: 'bank_transfer',
-      products: [
-        { name: 'Sữa chua', qty: 4, price: 15000, unit: 'Hũ' },
-      ],
-    },
-    {
-      id: '9',
-      code: '#130',
-      status: 'success',
-      buyer: 'Khách lẻ',
-      time: '20:00, 2 tháng 7, 2025',
-      total: 100000,
-      paymentMethod: 'cash',
-      products: [
-        { name: 'Pizza', qty: 1, price: 100000, unit: 'Cái' },
-      ],
-    },
-    {
-      id: '10',
-      code: '#131',
-      status: 'cancel',
-      buyer: 'Khách lẻ',
-      time: '21:00, 2 tháng 7, 2025',
-      total: 30000,
-      paymentMethod: 'nfc',
-      products: [
-        { name: 'Bánh bao', qty: 3, price: 10000, unit: 'Cái' },
-      ],
-    },
-    {
-      id: '11',
-      code: '#132',
-      status: 'success',
-      buyer: 'Khách lẻ',
-      time: '22:00, 2 tháng 7, 2025',
-      total: 80000,
-      paymentMethod: 'bank_transfer',
-      products: [
-        { name: 'Bún bò', qty: 2, price: 40000, unit: 'Tô' },
-      ],
-    },
-    {
-      id: '12',
-      code: '#133',
-      status: 'success',
-      buyer: 'Khách lẻ',
-      time: '23:00, 2 tháng 7, 2025',
-      total: 50000,
-      paymentMethod: 'cash',
-      products: [
-        { name: 'Phở', qty: 1, price: 50000, unit: 'Tô' },
-      ],
-    },
-  ]), []);
+  const methodFromCode = (code: number | string | undefined): BillItem['paymentMethod'] => {
+    const n = Number(code ?? 0);
+    if (n === 1) return 'cash';
+    if (n === 2) return 'bank_transfer';
+    if (n === 3) return 'nfc';
+    return 'cash';
+  };
 
-  const getStatus = (s: BillItem['status']) => s === 'success' ? { text: 'Thành công', color: '#D1F2EB', textColor: '#1ABC9C' } : { text: 'Hủy', color: '#FDEDEC', textColor: '#E74C3C' };
-  const getMethod = (m: BillItem['paymentMethod']) => m === 'cash' ? { icon: 'cash', text: 'Tiền mặt' } : m === 'bank_transfer' ? { icon: 'bank-transfer', text: 'Chuyển khoản' } : { icon: 'nfc', text: 'Thẻ thành viên NFC' };
+  const formatVnDateTime = (iso?: string) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const time = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const date = d.toLocaleDateString('vi-VN', { day: 'numeric', month: 'long', year: 'numeric' });
+    return `${time}, ${date}`;
+  };
+
+  const formatShortVn = (iso?: string) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${hh}:${mm} ${dd}/${m}`;
+  };
+
+  const loadShifts = useCallback(async () => {
+    try {
+      setLoading(true);
+      const token = await getAuthToken();
+      const shopId = (await getShopId()) ?? 0;
+      if (!token || !shopId) return;
+      const res = await fetch(`${API_URL}/api/shifts?ShopId=${shopId}&page=1&pageSize=100`, {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => null);
+      const items = Array.isArray(json?.items)
+        ? json.items
+        : Array.isArray(json?.data?.items)
+        ? json.data.items
+        : Array.isArray(json?.data)
+        ? json.data
+        : Array.isArray(json)
+        ? json
+        : [];
+      const mapped: ShiftItem[] = items.map((it: any) => ({
+        id: Number(it?.shiftId ?? it?.id ?? 0),
+        name: String(it?.name ?? it?.shiftName ?? ''),
+        openedDate: it?.openedDate ?? it?.openDate ?? it?.startDate ?? it?.createdAt ?? null,
+        closedDate: it?.closedDate ?? it?.closeDate ?? null,
+      })).filter((s: ShiftItem) => s.id > 0);
+      setShifts(mapped);
+      const open = mapped.find(s => s.closedDate == null);
+      setSelectedShiftId(open ? open.id : (mapped[0]?.id ?? null));
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message ?? 'Không tải được ca làm');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadOrders = useCallback(async (shiftId: number | null) => {
+    if (!shiftId) { setOrders([]); return; }
+    try {
+      setLoading(true);
+      const token = await getAuthToken();
+      const shopId = (await getShopId()) ?? 0;
+      if (!token || !shopId) return;
+      const url = `${API_URL}/api/orders?ShopId=${shopId}&ShiftId=${shiftId}&page=1&pageSize=100`;
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      const json = await res.json().catch(() => null);
+      const items = Array.isArray(json?.items)
+        ? json.items
+        : Array.isArray(json?.data?.items)
+        ? json.data.items
+        : Array.isArray(json?.data)
+        ? json.data
+        : Array.isArray(json)
+        ? json
+        : [];
+      const mapped: BillItem[] = items.map((o: any) => {
+        const idNum = Number(o?.orderId ?? o?.id ?? 0);
+        const statusNum = Number(o?.status ?? 0);
+        const total = Number(o?.totalPrice ?? o?.totalAmount ?? 0);
+        const buyer = String(o?.customerName ?? 'Khách lẻ');
+        const code = idNum > 0 ? `#${idNum}` : String(o?.code ?? '#');
+        const time = formatVnDateTime(o?.createdAt ?? o?.datetime);
+        const method = methodFromCode(o?.paymentMethod ?? o?.paymentMethodCode);
+        return {
+          id: String(idNum || code),
+          code,
+          status: statusNum === 1 ? 'success' : 'cancel',
+          buyer,
+          time,
+          total,
+          paymentMethod: method,
+        } as BillItem;
+      });
+      // Sort newest first
+      mapped.sort((a, b) => {
+        const ta = a.time; const tb = b.time;
+        // parse using existing parser for consistency
+        const pa = parseVietnameseDate(ta); const pb = parseVietnameseDate(tb);
+        return pb - pa;
+      });
+      setOrders(mapped);
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message ?? 'Không tải được danh sách hóa đơn');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadOrderDetails = useCallback(async (orderId: number) => {
+    try {
+      setLoadingDetails(true);
+      const token = await getAuthToken();
+      const shopId = (await getShopId()) ?? 0;
+      if (!token || !shopId) return;
+      const url = `${API_URL}/api/order-details?ShopId=${shopId}&OrderId=${orderId}&page=1&pageSize=100`;
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      const json = await res.json().catch(() => null);
+      const items = Array.isArray(json?.items)
+        ? json.items
+        : Array.isArray(json?.data?.items)
+        ? json.data.items
+        : Array.isArray(json?.data)
+        ? json.data
+        : Array.isArray(json)
+        ? json
+        : [];
+      const details = items.map((d: any) => ({
+        name: String(d?.productName ?? d?.name ?? ''),
+        qty: Number(d?.quantity ?? d?.qty ?? 0),
+        price: Number(d?.unitPrice ?? d?.price ?? 0),
+        unit: String(d?.unitName ?? d?.unit ?? ''),
+      }));
+      setSelectedDetails(details);
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message ?? 'Không tải được chi tiết hóa đơn');
+    } finally {
+      setLoadingDetails(false);
+    }
+  }, []);
+
+  const getStatus = (s: BillItem['status']): { text: string; color: string; textColor: string } => s === 'success' ? { text: 'Thành công', color: '#D1F2EB', textColor: '#1ABC9C' } : { text: 'Hủy', color: '#FDEDEC', textColor: '#E74C3C' };
+  const getMethod = (m: BillItem['paymentMethod']): { icon: string; text: string } => m === 'cash' ? { icon: 'cash', text: 'Tiền mặt' } : m === 'bank_transfer' ? { icon: 'bank-transfer', text: 'Chuyển khoản' } : { icon: 'nfc', text: 'Thẻ thành viên NFC' };
 
   const parseVietnameseDate = (text: string) => {
     // Expect format: "HH:mm, D tháng M, YYYY"
@@ -204,12 +208,12 @@ const BillsScreen = () => {
 
   const filteredBills = useMemo(() => {
     const lower = query.trim().toLowerCase();
-    const list = bills.filter(b => {
+    const list = orders.filter(b => {
       const matchStatus = statusFilter === 'all' ? true : b.status === statusFilter;
       const matchText = !lower ||
         b.code.toLowerCase().includes(lower) ||
         b.buyer.toLowerCase().includes(lower) ||
-        b.products.some(p => p.name.toLowerCase().includes(lower));
+        false;
       return matchStatus && matchText;
     });
     list.sort((a, b) => {
@@ -218,34 +222,20 @@ const BillsScreen = () => {
       return sortOrder === 'desc' ? tb - ta : ta - tb;
     });
     return list;
-  }, [bills, query, statusFilter, sortOrder]);
+  }, [orders, query, statusFilter, sortOrder]);
 
   const shiftBills = useMemo(() => {
     return filteredBills.filter(bill => {
       const billTime = parseVietnameseDate(bill.time);
       let shiftStart, shiftEnd;
-      switch (selectedShift) {
-        case '7h-15h':
-          shiftStart = new Date(2025, 6, 2, 7).getTime();
-          shiftEnd = new Date(2025, 6, 2, 15).getTime();
-          break;
-        case '15h-23h':
-          shiftStart = new Date(2025, 6, 2, 15).getTime();
-          shiftEnd = new Date(2025, 6, 2, 23).getTime();
-          break;
-        case '23h-7h':
-          shiftStart = new Date(2025, 6, 2, 23).getTime();
-          shiftEnd = new Date(2025, 6, 3, 7).getTime();
-          break;
-        default:
-          return false;
-      }
+      // If API provided times, we already filtered by shift server-side. Keep all.
+      shiftStart = 0; shiftEnd = Number.MAX_SAFE_INTEGER;
       return billTime >= shiftStart && billTime < shiftEnd;
     });
-  }, [filteredBills, selectedShift]);
+  }, [filteredBills]);
 
   const totalRevenue = useMemo(() => {
-    return shiftBills.reduce((sum, bill) => sum + bill.total, 0);
+    return shiftBills.reduce((sum, bill) => bill.status === 'success' ? sum + bill.total : sum, 0);
   }, [shiftBills]);
 
   const totalOrders = shiftBills.length;
@@ -266,10 +256,28 @@ const BillsScreen = () => {
     };
   }, [navigation]);
 
+  useEffect(() => {
+    loadShifts();
+  }, [loadShifts]);
+
+  useEffect(() => {
+    loadOrders(selectedShiftId);
+  }, [selectedShiftId, loadOrders]);
+
   const renderItem = ({ item }: { item: BillItem }) => {
     const s = getStatus(item.status);
     return (
-      <TouchableOpacity style={styles.billItem} onPress={() => setSelected(item)}>
+      <TouchableOpacity
+        style={styles.billItem}
+        onPress={async () => {
+          const idNum = parseInt(item.id.replace('#',''), 10);
+          if (!isNaN(idNum)) {
+            // Navigate to detail screen
+            // @ts-ignore - navigation typing generic
+            navigation.navigate('OrderDetail', { orderId: idNum });
+          }
+        }}
+      >
         <View style={styles.billLeft}>
           <Text style={styles.billTitle}>Thanh toán đơn {item.code}</Text>
           <Text style={styles.billTime}>{item.time}</Text>
@@ -335,13 +343,19 @@ const BillsScreen = () => {
 
         <View style={styles.shiftContainer}>
           <Picker
-            selectedValue={selectedShift}
-            onValueChange={(itemValue) => setSelectedShift(itemValue)}
+            selectedValue={selectedShiftId ?? undefined}
+            onValueChange={(itemValue) => setSelectedShiftId(Number(itemValue))}
             style={styles.picker}
           >
-            {shifts.map(shift => (
-              <Picker.Item key={shift.value} label={shift.label} value={shift.value} />
-            ))}
+            {(shifts || []).map(shift => {
+              const isOpen = shift.closedDate == null;
+              const label = isOpen
+                ? `Ca đang mở (${formatShortVn(shift.openedDate ?? undefined)})`
+                : `Ca đã đóng (${formatShortVn(shift.openedDate ?? undefined)} - ${formatShortVn((shift.closedDate ?? undefined))})`;
+              return (
+                <Picker.Item key={shift.id} label={label} value={shift.id} />
+              );
+            })}
           </Picker>
         </View>
 
@@ -350,78 +364,32 @@ const BillsScreen = () => {
           <Text style={styles.statisticsText}>Tổng đơn hàng: {totalOrders}</Text>
         </View>
 
+        {loading ? (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <ActivityIndicator size="small" color="#009DA5" />
+          </View>
+        ) : (
         <FlatList
           data={shiftBills}
           keyExtractor={(i) => i.id}
           renderItem={renderItem}
           contentContainerStyle={{ paddingVertical: 8, paddingBottom: keyboardVisible ? 0 : (insets.bottom || 0) }}
           ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+            refreshing={refreshing}
+            onRefresh={async () => {
+              setRefreshing(true);
+              try {
+                await loadOrders(selectedShiftId);
+              } finally {
+                setRefreshing(false);
+              }
+            }}
         />
+        )}
       </View>
       </KeyboardAvoidingView>
 
-      {/* Detail Modal */}
-      <Modal visible={!!selected} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            {selected && (
-              <>
-                <View style={styles.modalHeader}>
-                  <TouchableOpacity onPress={() => setSelected(null)}>
-                    <Icon name="close" size={22} color="#000" />
-                  </TouchableOpacity>
-                  <Text style={styles.modalTitle}>Chi tiết hóa đơn {selected.code}</Text>
-                  <View style={{ width: 22 }} />
-                </View>
-
-                <ScrollView showsVerticalScrollIndicator={false}>
-                  <View style={styles.detailRow}>
-                    <Icon name="account" size={18} color="#666" />
-                    <Text style={styles.detailText}>Khách: {selected.buyer}</Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Icon name="clock-outline" size={18} color="#666" />
-                    <Text style={styles.detailText}>{selected.time}</Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Icon name={getMethod(selected.paymentMethod).icon} size={18} color="#666" />
-                    <Text style={styles.detailText}>PTTT: {getMethod(selected.paymentMethod).text}</Text>
-                  </View>
-
-                  <View style={styles.sectionDivider} />
-
-                  {selected.products.map((p, idx) => (
-                    <View key={idx} style={styles.productRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.productName}>{p.name}</Text>
-                        <Text style={styles.productMeta}>{p.qty} x {p.price.toLocaleString('vi-VN')}₫ {p.unit ? `• ${p.unit}` : ''}</Text>
-                      </View>
-                      <Text style={styles.productAmount}>{(p.qty * p.price).toLocaleString('vi-VN')}₫</Text>
-                    </View>
-                  ))}
-
-                  <View style={styles.sectionDivider} />
-
-                  {selected.discount && (
-                    <View style={styles.totalRow}>
-                      <Text style={styles.totalLabel}>Chiết khấu</Text>
-                      <Text style={[styles.totalValue,{ color: '#E67E22' }]}>- {selected.discount.amount.toLocaleString('vi-VN')}₫</Text>
-                    </View>
-                  )}
-                  {selected.discount?.reason && (
-                    <Text style={styles.discountReason}>Lý do giảm: {selected.discount.reason}</Text>
-                  )}
-
-                  <View style={styles.totalRow}>
-                    <Text style={styles.totalLabel}>Tổng thanh toán</Text>
-                    <Text style={styles.totalValue}>{selected.total.toLocaleString('vi-VN')}₫</Text>
-                  </View>
-                </ScrollView>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
+      {/* Detail moved to OrderDetailScreen */}
     </SafeAreaView>
   );
 };
