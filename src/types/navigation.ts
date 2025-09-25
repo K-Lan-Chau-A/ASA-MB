@@ -4,6 +4,15 @@ export type RootStackParamList = {
   Notification: undefined;
   Scanner: undefined;
   ChatbotScreen: undefined;
+  PromotionScreen: undefined;
+  VoucherScreen: undefined;
+  InventoryTransactionScreen: undefined;
+  ManageCustomerScreen: undefined;
+  ManageCategoryScreen: undefined;
+  LogActivityScreen: undefined;
+  ManageAccount: undefined;
+  ReportScreen: undefined;
+  SettingScreen: undefined;
   OrderDetail: { orderId: number };
   Customer: undefined;
   Order: { 

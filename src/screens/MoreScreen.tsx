@@ -15,17 +15,17 @@ const MoreScreen = () => {
 
   const menuItems: MenuItem[] = [
     { id: 1, title: 'Chat với AI', onPress: () => navigation.navigate('ChatbotScreen') },
-    { id: 2, title: 'Đặt hàng', onPress: () => console.log('Đặt hàng') },
-    { id: 3, title: 'Trả hàng', onPress: () => console.log('Trả hàng') },
-    { id: 4, title: 'Quản lý ca', onPress: () => console.log('Quản lý ca') },
-    { id: 5, title: 'Kiểm kho', onPress: () => console.log('Kiểm kho') },
-    { id: 6, title: 'Khách hàng', onPress: () => console.log('Khách hàng') },
-    { id: 7, title: 'Nhà cung cấp', onPress: () => console.log('Nhà cung cấp') },
-    { id: 8, title: 'Trả hàng nhập', onPress: () => console.log('Trả hàng nhập') },
-    { id: 9, title: 'Xuất hủy', onPress: () => console.log('Xuất hủy') },
-    { id: 10, title: 'Sổ quỹ', onPress: () => console.log('Sổ quỹ') },
-    { id: 11, title: 'Báo cáo', onPress: () => console.log('Báo cáo') },
-    { id: 12, title: 'Cài đặt', onPress: () => console.log('Cài đặt') },
+    { id: 2, title: 'Nhập hàng', onPress: () => navigation.navigate('AddProduct') },
+    { id: 3, title: 'Phiếu quà tặng', onPress: () => navigation.navigate('VoucherScreen') },
+    { id: 4, title: 'Khuyến mãi', onPress: () => navigation.navigate('PromotionScreen') },
+    { id: 5, title: 'Lịch sử kho', onPress: () => navigation.navigate('InventoryTransactionScreen') },
+    { id: 6, title: 'Khách hàng', onPress: () => navigation.navigate('ManageCustomerScreen') },
+    { id: 7, title: 'Danh mục sản phẩm', onPress: () => navigation.navigate('ManageCategoryScreen') },
+    { id: 8, title: 'Lịch sử hoạt động', onPress: () => navigation.navigate('LogActivityScreen') },
+    { id: 9, title: 'Quản lý tài khoản', onPress: () => navigation.navigate('ManageAccount') },
+    { id: 10, title: 'Đóng ca', onPress: () => console.log('Đóng ca') },
+    { id: 11, title: 'Báo cáo', onPress: () => navigation.navigate('ReportScreen') },
+    { id: 12, title: 'Cài đặt', onPress: () => navigation.navigate('SettingScreen') },
   ];
 
   const renderMenuItem = (item: MenuItem) => (

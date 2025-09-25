@@ -490,10 +490,6 @@ const ProductsScreen = () => {
             <TouchableOpacity style={styles.qrButton} onPress={handleScanBarcode}>
               <Icon name="qrcode-scan" size={20} color="#009DA5" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.addButton} onPress={handleAddProduct}>
-              <Icon name="plus" size={20} color="#FFFFFF" />
-              <Text style={styles.addButtonText}>Thêm</Text>
-            </TouchableOpacity>
           </View>
 
           {/* Categories */}

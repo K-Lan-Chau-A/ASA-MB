@@ -16,6 +16,15 @@ import AddProductScreen from './src/screens/AddProductScreen';
 import ChatbotScreen from './src/screens/ChatbotScreen';
 import CustomerScreen from './src/screens/CustomerScreen';
 import { useNotification } from './src/hooks/useNotification';
+import PromotionScreen from './src/screens/PromotionScreen';
+import VoucherScreen from './src/screens/VoucherScreen';
+import InventoryTransactionScreen from './src/screens/InventoryTransactionScreen';
+import ManageCustomerScreen from './src/screens/ManageCustomerScreen';
+import ManageCategoryScreen from './src/screens/ManageCategoryScreen';
+import LogActivityScreen from './src/screens/LogActivityScreen';
+import ManageAccount from './src/screens/ManageAccount';
+import ReportScreen from './src/screens/ReportScreen';
+import SettingScreen from './src/screens/SettingScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -107,6 +116,22 @@ function App() {
             animation: 'slide_from_right'
           }}
         />
+        <Stack.Screen 
+          name="PromotionScreen" 
+          component={PromotionScreen}
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right'
+          }}
+        />
+        <Stack.Screen name="VoucherScreen" component={VoucherScreen} options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="InventoryTransactionScreen" component={InventoryTransactionScreen} options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="ManageCustomerScreen" component={ManageCustomerScreen} options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="ManageCategoryScreen" component={ManageCategoryScreen} options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="LogActivityScreen" component={LogActivityScreen} options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="ManageAccount" component={ManageAccount} options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="ReportScreen" component={ReportScreen} options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="SettingScreen" component={SettingScreen} options={{ headerShown: false, animation: 'slide_from_right' }} />
       </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

@@ -84,6 +84,8 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
   const [newCategoryDesc, setNewCategoryDesc] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [inventoryTotalPrice, setInventoryTotalPrice] = useState('');
+  const [invoiceImage, setInvoiceImage] = useState('');
 
   const updateProduct = useCallback((field: keyof NewProduct, value: string) => {
     setProduct(prev => ({ ...prev, [field]: value }));
@@ -156,6 +158,62 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
     );
   }, [updateProduct]);
 
+  const handleAddInvoicePhoto = useCallback(() => {
+    Alert.alert(
+      'Ảnh hóa đơn nhập',
+      undefined,
+      [
+        {
+          text: 'Chụp ảnh',
+          onPress: () => {
+            const cameraOptions: CameraOptions = {
+              mediaType: 'photo',
+              saveToPhotos: true,
+              cameraType: 'back',
+            };
+            launchCamera(cameraOptions, (response) => {
+              if (response.didCancel) return;
+              if (response.errorCode) {
+                Alert.alert('Lỗi', response.errorMessage || 'Không thể mở camera');
+                return;
+              }
+              const asset: Asset | undefined = response.assets && response.assets[0];
+              if (asset?.uri) {
+                setInvoiceImage(asset.uri);
+              } else {
+                Alert.alert('Lỗi', 'Không lấy được ảnh vừa chụp');
+              }
+            });
+          },
+        },
+        {
+          text: 'Thư viện',
+          onPress: () => {
+            const options: ImageLibraryOptions = {
+              mediaType: 'photo',
+              selectionLimit: 1,
+              includeBase64: false,
+            };
+            launchImageLibrary(options, (response) => {
+              if (response.didCancel) return;
+              if (response.errorCode) {
+                Alert.alert('Lỗi', response.errorMessage || 'Không thể mở thư viện ảnh');
+                return;
+              }
+              const asset: Asset | undefined = response.assets && response.assets[0];
+              if (asset?.uri) {
+                setInvoiceImage(asset.uri);
+              } else {
+                Alert.alert('Lỗi', 'Không lấy được ảnh đã chọn');
+              }
+            });
+          },
+        },
+        { text: 'Hủy', style: 'cancel' },
+      ]
+    );
+  }, []);
+
   // Load shopId and fetch categories
   useEffect(() => {
     const fetchAll = async () => {
@@ -226,6 +284,20 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
     };
     loadCost();
   }, [route.params, shopId, product.importPrice]);
+
+  // Auto-calc import cost per unit from quantity and total price
+  useEffect(() => {
+    try {
+      const qty = parseInt(product.quantity || '0', 10) || 0;
+      const total = parseInt((inventoryTotalPrice || '').replace(/[^\d]/g, '')) || 0;
+      if (qty > 0 && total > 0) {
+        const unit = Math.round(total / qty);
+        setProduct(prev => ({ ...prev, importPrice: unit.toLocaleString('vi-VN') }));
+      } else {
+        setProduct(prev => ({ ...prev, importPrice: '' }));
+      }
+    } catch {}
+  }, [product.quantity, inventoryTotalPrice]);
 
 
   const handleCreateCategory = useCallback(async () => {
@@ -298,25 +370,37 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
 
     // Validate price format
     const sellPrice = parseInt(product.sellPrice.replace(/[^\d]/g, ''));
-    const importPrice = parseInt(product.importPrice.replace(/[^\d]/g, '')) || 0;
+    const quantity = parseInt(product.quantity || '0', 10) || 0;
+    const totalImport = parseInt((inventoryTotalPrice || '').replace(/[^\d]/g, '')) || 0;
+    const unitImportPrice = quantity > 0 ? Math.round(totalImport / quantity) : 0;
     
     if (isNaN(sellPrice) || sellPrice <= 0) {
       Alert.alert('Lỗi', 'Giá bán phải là số dương');
       return;
     }
 
-    if (importPrice > sellPrice) {
+    if (quantity <= 0) {
+      Alert.alert('Lỗi', 'Vui lòng nhập số lượng nhập (> 0)');
+      return;
+    }
+
+    if (totalImport <= 0) {
+      Alert.alert('Lỗi', 'Vui lòng nhập tổng tiền nhập hàng');
+      return;
+    }
+
+    if (unitImportPrice > sellPrice) {
       Alert.alert('Cảnh báo', 'Giá nhập cao hơn giá bán. Bạn có chắc chắn muốn tiếp tục?', [
         { text: 'Hủy', style: 'cancel' },
-        { text: 'Tiếp tục', onPress: () => saveProduct(sellPrice, importPrice) }
+        { text: 'Tiếp tục', onPress: () => saveProduct(sellPrice, unitImportPrice, totalImport) }
       ]);
       return;
     }
 
-    saveProduct(sellPrice, importPrice);
-  }, [product, navigation]);
+    saveProduct(sellPrice, unitImportPrice, totalImport);
+  }, [product, navigation, inventoryTotalPrice]);
 
-  const saveProduct = useCallback(async (sellPrice: number, importPrice: number) => {
+  const saveProduct = useCallback(async (sellPrice: number, unitImportPrice: number, totalImportPrice: number) => {
     try {
       setIsSaving(true);
       // Build payload per API contract (multipart/form-data)
@@ -357,12 +441,12 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
       form.append('Price', String(sellPrice));
       form.append('Discount', String(parsedDiscount));
       form.append('Status', String(1));
-      // Units as JSON array (server parses stringified JSON)
-      form.append('Units', JSON.stringify(unitsPayload));
+      // Units as JSON array (server parses stringified JSON) - updated field name per API change
+      form.append('UnitsJson', JSON.stringify(unitsPayload));
       if (!isEditing) {
         // InventoryTransaction fields only when creating
         form.append('InventoryTransaction.Quantity', String(parsedQuantity));
-        form.append('InventoryTransaction.Price', String(importPrice));
+        form.append('InventoryTransaction.Price', String(totalImportPrice));
       }
 
       // Attach product image file if available (optional)
@@ -378,13 +462,19 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
           name,
           type,
         } as any);
-        if (!isEditing) {
-          form.append('InventoryTransaction.ImageFile', {
-            uri,
-            name: `inventory_${name}`,
-            type,
-          } as any);
-        }
+      }
+
+      // Attach invoice image file for inventory transaction if provided
+      if (!isEditing && (invoiceImage || '').trim()) {
+        const uri = invoiceImage.trim();
+        const name = uri.split('/').pop() || 'invoice.jpg';
+        const ext = (name.split('.').pop() || 'jpg').toLowerCase();
+        const type = ext === 'png' ? 'image/png' : ext === 'jpeg' || ext === 'jpg' ? 'image/jpeg' : 'application/octet-stream';
+        form.append('InventoryTransaction.ImageFile', {
+          uri,
+          name,
+          type,
+        } as any);
       }
 
       const token = await getAuthToken();
@@ -398,10 +488,12 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
           barcode: product.barcode,
           category: product.category,
           sellPrice,
-          importPrice,
+          importPrice: unitImportPrice,
           baseUnit,
           additionalUnitsCount: additionalUnits.length,
           hasImage: Boolean(product.image),
+          inventoryTotalPrice: totalImportPrice,
+          hasInvoiceImage: Boolean(invoiceImage),
         } as any);
       } catch {}
       const res = await fetch(url, {
@@ -440,7 +532,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
     } finally {
       setIsSaving(false);
     }
-  }, [product, baseUnit, additionalUnits, navigation, isEditing, editingId, categories, shopId]);
+  }, [product, baseUnit, additionalUnits, navigation, isEditing, editingId, categories, shopId, invoiceImage]);
 
   const handleCancel = useCallback(() => {
     // Simply go back without adding any product
@@ -614,26 +706,37 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
           {/* Prices Row */}
           <View style={styles.rowContainer}>
             <View style={[styles.fieldContainer, styles.halfWidth]}>
-              <Text style={styles.label}>Nhập giá vốn <Text style={styles.requiredStar}>*</Text></Text>
+              <Text style={styles.label}>Tổng tiền nhập hàng<Text style={styles.requiredStar}>*</Text></Text>
               <TextInput
                 style={styles.input}
-                value={product.importPrice}
-                onChangeText={(text) => handlePriceChange('importPrice', text)}
-                placeholder="Nhập giá (VND)"
+                value={inventoryTotalPrice}
+                onChangeText={(text) => setInventoryTotalPrice(formatPrice(text))}
+                placeholder="Nhập tổng tiền"
                 keyboardType="numeric"
               />
             </View>
 
             <View style={[styles.fieldContainer, styles.halfWidth]}>
-              <Text style={styles.label}>Nhập giá bán <Text style={styles.requiredStar}>*</Text></Text>
+              <Text style={styles.label}>Giá bán <Text style={styles.requiredStar}>*</Text></Text>
               <TextInput
                 style={styles.input}
                 value={product.sellPrice}
                 onChangeText={(text) => handlePriceChange('sellPrice', text)}
-                placeholder="Nhập giá (VND)"
+                placeholder="Nhập giá bán"
                 keyboardType="numeric"
               />
             </View>
+          </View>
+
+          {/* Computed Import Price */}
+          <View style={styles.fieldContainer}>
+            <Text style={styles.label}>Giá vốn/đơn vị (tự tính)</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: '#EFEFEF' }]}
+              value={product.importPrice}
+              editable={false}
+              placeholder="Tự tính từ Số lượng và Tổng tiền"
+            />
           </View>
 
           {/* Base Unit and Additional Units */}
@@ -735,6 +838,31 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
               />
             </View>
           </View>
+
+          {/* Invoice Image */}
+          {!isEditing && (
+            <View style={styles.fieldContainer}>
+              <Text style={styles.label}>Ảnh hóa đơn nhập</Text>
+              {invoiceImage ? (
+                <View style={styles.invoiceImageWrapper}>
+                  <TouchableOpacity activeOpacity={0.8} onPress={handleAddInvoicePhoto}>
+                    <Image source={{ uri: invoiceImage }} style={styles.invoiceImage} resizeMode="cover" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.invoiceDeleteButton}
+                    onPress={() => setInvoiceImage('')}
+                    accessibilityLabel="Xóa ảnh hóa đơn"
+                  >
+                    <Icon name="close" size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.addButton} onPress={handleAddInvoicePhoto}>
+                  <Text style={styles.addButtonText}>Chọn/Chụp ảnh hóa đơn</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -932,6 +1060,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#000',
     fontWeight: 'bold',
+  },
+  invoiceImageWrapper: {
+    width: 140,
+    height: 140,
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  invoiceImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+  },
+  invoiceDeleteButton: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FF3B30',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 3,
   },
   modalOverlay: {
     flex: 1,
