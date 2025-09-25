@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Asset, ImageLibraryOptions, launchImageLibrary } from 'react-native-image-picker';
+import { Asset, ImageLibraryOptions, CameraOptions, launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
@@ -101,24 +101,59 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
   }, [formatPrice, updateProduct]);
 
   const handleAddPhoto = useCallback(() => {
-    const options: ImageLibraryOptions = {
-      mediaType: 'photo',
-      selectionLimit: 1,
-      includeBase64: false,
-    };
-    launchImageLibrary(options, (response) => {
-      if (response.didCancel) return;
-      if (response.errorCode) {
-        Alert.alert('Lỗi', response.errorMessage || 'Không thể mở thư viện ảnh');
-        return;
-      }
-      const asset: Asset | undefined = response.assets && response.assets[0];
-      if (asset?.uri) {
-        updateProduct('image', asset.uri);
-      } else {
-        Alert.alert('Lỗi', 'Không lấy được ảnh đã chọn');
-      }
-    });
+    Alert.alert(
+      'Chọn nguồn ảnh',
+      undefined,
+      [
+        {
+          text: 'Chụp ảnh',
+          onPress: () => {
+            const cameraOptions: CameraOptions = {
+              mediaType: 'photo',
+              saveToPhotos: true,
+              cameraType: 'back',
+            };
+            launchCamera(cameraOptions, (response) => {
+              if (response.didCancel) return;
+              if (response.errorCode) {
+                Alert.alert('Lỗi', response.errorMessage || 'Không thể mở camera');
+                return;
+              }
+              const asset: Asset | undefined = response.assets && response.assets[0];
+              if (asset?.uri) {
+                updateProduct('image', asset.uri);
+              } else {
+                Alert.alert('Lỗi', 'Không lấy được ảnh vừa chụp');
+              }
+            });
+          },
+        },
+        {
+          text: 'Thư viện',
+          onPress: () => {
+            const options: ImageLibraryOptions = {
+              mediaType: 'photo',
+              selectionLimit: 1,
+              includeBase64: false,
+            };
+            launchImageLibrary(options, (response) => {
+              if (response.didCancel) return;
+              if (response.errorCode) {
+                Alert.alert('Lỗi', response.errorMessage || 'Không thể mở thư viện ảnh');
+                return;
+              }
+              const asset: Asset | undefined = response.assets && response.assets[0];
+              if (asset?.uri) {
+                updateProduct('image', asset.uri);
+              } else {
+                Alert.alert('Lỗi', 'Không lấy được ảnh đã chọn');
+              }
+            });
+          },
+        },
+        { text: 'Hủy', style: 'cancel' },
+      ]
+    );
   }, [updateProduct]);
 
   // Load shopId and fetch categories
