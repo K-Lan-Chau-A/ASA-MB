@@ -36,6 +36,7 @@ const BillsScreen = () => {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   const [shifts, setShifts] = useState<ShiftItem[]>([]);
   const [selectedShiftId, setSelectedShiftId] = useState<number | null>(null);
@@ -186,6 +187,61 @@ const BillsScreen = () => {
     }
   }, []);
 
+  const searchOrderById = useCallback(async (orderId: string) => {
+    try {
+      setSearchLoading(true);
+      const token = await getAuthToken();
+      const shopId = (await getShopId()) ?? 0;
+      if (!token || !shopId) return;
+      
+      // Extract number from orderId (remove # if present)
+      const idNum = parseInt(orderId.replace('#', ''), 10);
+      if (isNaN(idNum)) {
+        setOrders([]);
+        return;
+      }
+      
+      const url = `${API_URL}/api/orders?OrderId=${idNum}&ShopId=${shopId}&page=1&pageSize=1`;
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      const json = await res.json().catch(() => null);
+      const items = Array.isArray(json?.items)
+        ? json.items
+        : Array.isArray(json?.data?.items)
+        ? json.data.items
+        : Array.isArray(json?.data)
+        ? json.data
+        : Array.isArray(json)
+        ? json
+        : [];
+      
+      const mapped: BillItem[] = items.map((o: any) => {
+        const idNum = Number(o?.orderId ?? o?.id ?? 0);
+        const statusNum = Number(o?.status ?? 0);
+        const total = Number(o?.totalPrice ?? o?.totalAmount ?? 0);
+        const buyer = String(o?.customerName ?? 'Khách lẻ');
+        const code = idNum > 0 ? `#${idNum}` : String(o?.code ?? '#');
+        const time = formatVnDateTime(o?.createdAt ?? o?.datetime);
+        const method = methodFromCode(o?.paymentMethod ?? o?.paymentMethodCode);
+        return {
+          id: String(idNum || code),
+          code,
+          status: statusNum === 1 ? 'success' : 'cancel',
+          buyer,
+          time,
+          total,
+          paymentMethod: method,
+        } as BillItem;
+      });
+      
+      setOrders(mapped);
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message ?? 'Không tìm thấy hóa đơn');
+      setOrders([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, []);
+
   const getStatus = (s: BillItem['status']): { text: string; color: string; textColor: string } => s === 'success' ? { text: 'Thành công', color: '#D1F2EB', textColor: '#1ABC9C' } : { text: 'Hủy', color: '#FDEDEC', textColor: '#E74C3C' };
   const getMethod = (m: BillItem['paymentMethod']): { icon: string; text: string } => m === 'cash' ? { icon: 'cash', text: 'Tiền mặt' } : m === 'bank_transfer' ? { icon: 'bank-transfer', text: 'Chuyển khoản' } : { icon: 'nfc', text: 'Thẻ thành viên NFC' };
 
@@ -207,14 +263,15 @@ const BillsScreen = () => {
   };
 
   const filteredBills = useMemo(() => {
-    const lower = query.trim().toLowerCase();
+    // If there's a search query, return orders as-is (already filtered by API)
+    if (query.trim()) {
+      return orders.filter(b => statusFilter === 'all' ? true : b.status === statusFilter);
+    }
+    
+    // Otherwise, filter normally
     const list = orders.filter(b => {
       const matchStatus = statusFilter === 'all' ? true : b.status === statusFilter;
-      const matchText = !lower ||
-        b.code.toLowerCase().includes(lower) ||
-        b.buyer.toLowerCase().includes(lower) ||
-        false;
-      return matchStatus && matchText;
+      return matchStatus;
     });
     list.sort((a, b) => {
       const ta = parseVietnameseDate(a.time);
@@ -264,6 +321,20 @@ const BillsScreen = () => {
     loadOrders(selectedShiftId);
   }, [selectedShiftId, loadOrders]);
 
+  // Search effect
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (query.trim()) {
+        searchOrderById(query.trim());
+      } else {
+        // If query is empty, reload orders for current shift
+        loadOrders(selectedShiftId);
+      }
+    }, 500); // Debounce 500ms
+
+    return () => clearTimeout(timeoutId);
+  }, [query, searchOrderById, loadOrders, selectedShiftId]);
+
   const renderItem = ({ item }: { item: BillItem }) => {
     const s = getStatus(item.status);
     return (
@@ -293,7 +364,7 @@ const BillsScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom','left','right']}>
+    <SafeAreaView style={styles.container} edges={['left','right']}>
       <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'height' : 'padding'} style={{ flex: 1 }}>
       <View style={styles.content}>
         {/* Search + Sort */}
@@ -364,17 +435,29 @@ const BillsScreen = () => {
           <Text style={styles.statisticsText}>Tổng đơn hàng: {totalOrders}</Text>
         </View>
 
-        {loading ? (
+        {loading || searchLoading ? (
           <View style={{ paddingVertical: 40, alignItems: 'center' }}>
             <ActivityIndicator size="small" color="#009DA5" />
+            <Text style={{ marginTop: 8, color: '#666' }}>
+              {searchLoading ? 'Đang tìm kiếm...' : 'Đang tải...'}
+            </Text>
           </View>
         ) : (
         <FlatList
           data={shiftBills}
           keyExtractor={(i) => i.id}
           renderItem={renderItem}
-          contentContainerStyle={{ paddingVertical: 8, paddingBottom: keyboardVisible ? 0 : (insets.bottom || 0) }}
+          contentContainerStyle={{ 
+            paddingVertical: 8, 
+            paddingBottom: keyboardVisible ? 0 : Math.max(insets.bottom + 60, 60) // Đảm bảo ít nhất 120px padding
+          }}
           ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+          ListFooterComponent={() => (
+            <View style={{ 
+              height: keyboardVisible ? 0 : Math.max(insets.bottom + 100, 100),
+              backgroundColor: 'transparent' 
+            }} />
+          )}
             refreshing={refreshing}
             onRefresh={async () => {
               setRefreshing(true);
@@ -493,7 +576,7 @@ const styles = StyleSheet.create({
   statusChipText: { fontSize: 12, fontWeight: '600' },
 
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#FFFFFF', maxHeight: '80%', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16 },
+  modalCard: { backgroundColor: '#FFFFFF', maxHeight: '80%', borderTopLeftRadius: 30, borderTopRightRadius: 30, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, padding: 16 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   modalTitle: { fontSize: 16, fontWeight: 'bold', color: '#000' },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 4 },
@@ -508,7 +591,7 @@ const styles = StyleSheet.create({
   totalValue: { fontSize: 16, fontWeight: 'bold', color: '#000' },
   discountReason: { fontSize: 12, color: '#999', fontStyle: 'italic', marginTop: 4 },
   shiftContainer: {
-    marginBottom: 10,
+    marginBottom:20,
   },
   picker: {
     height: 50,

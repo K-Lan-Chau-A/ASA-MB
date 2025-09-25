@@ -73,10 +73,10 @@ const AddProductScreen = () => {
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [showUnitDropdown, setShowUnitDropdown] = useState(false);
   const [baseUnit, setBaseUnit] = useState(route.params?.product?.units?.find?.((u: any)=>u.isBaseUnit)?.unitName || '');
-const [additionalUnits, setAdditionalUnits] = useState<Array<{ unitName: string; conversionRate: number }>>(
+const [additionalUnits, setAdditionalUnits] = useState<Array<{ unitName: string; conversionRate: number; unitPrice?: string }>>(
   (route.params?.product?.units || [])
     .filter((u: any) => !u.isBaseUnit)
-    .map((u: any) => ({ unitName: String(u.unitName || u.name || ''), conversionRate: Number(u.quantityInBaseUnit || u.conversionFactor || 0) }))
+    .map((u: any) => ({ unitName: String(u.unitName || u.name || ''), conversionRate: Number(u.quantityInBaseUnit || u.conversionFactor || 0), unitPrice: typeof u.price === 'number' ? String(u.price) : '' }))
 );
 const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
   const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
@@ -304,7 +304,11 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
           .map(u => ({
             name: u.unitName.trim(),
             conversionFactor: u.conversionRate,
-            price: Math.round(sellPrice * (u.conversionRate || 1)),
+            price: (() => {
+              const explicit = parseInt(String(u.unitPrice || '').replace(/[^\d]/g, ''));
+              if (!isNaN(explicit) && explicit > 0) return explicit;
+              return Math.round(sellPrice * (u.conversionRate || 1));
+            })(),
             isBaseUnit: false,
           })),
       ];
@@ -632,6 +636,18 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
                   onChangeText={(text) => {
                     const newUnits = [...additionalUnits];
                     newUnits[index].conversionRate = parseFloat(text) || 0;
+                    setAdditionalUnits(newUnits);
+                  }}
+                  keyboardType="numeric"
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Giá bán của đơn vị"
+                  value={unit.unitPrice || ''}
+                  onChangeText={(text) => {
+                    const numeric = text.replace(/[^\d]/g, '');
+                    const newUnits = [...additionalUnits];
+                    newUnits[index].unitPrice = numeric;
                     setAdditionalUnits(newUnits);
                   }}
                   keyboardType="numeric"

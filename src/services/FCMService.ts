@@ -2,6 +2,8 @@
 
 import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import API_URL from '../config/api';
+
 const FCM_TOKEN_KEY = 'fcm_token';
 
 //Đã comment CODE để thuận tiện cho việc LOGIN BẰNG GIẢ LẬP KHÔNG CÓ FCM
@@ -116,6 +118,35 @@ class FCMService {
   async registerBackgroundMessageHandler(callback: (message: any) => Promise<any>) {
 
     return messaging().setBackgroundMessageHandler(callback);
+  }
+
+  async registerFCMToken(userId: number, fcmToken: string, uniqueId: string | null = null): Promise<boolean> {
+    try {
+      console.log('🔥 Registering FCM token for userId:', userId);
+      
+      const response = await fetch(`${API_URL}/api/fcm`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId,
+          fcmToken,
+          uniqueId,
+        }),
+      });
+
+      if (response.ok) {
+        console.log('🔥 FCM token registered successfully');
+        return true;
+      } else {
+        console.error('🔥 Failed to register FCM token:', response.status);
+        return false;
+      }
+    } catch (error) {
+      console.error('🔥 FCM registration error:', error);
+      return false;
+    }
   }
 }
 

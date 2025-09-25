@@ -29,6 +29,12 @@ interface ProductUnit {
   isBaseUnit: boolean;
 }
 
+interface Category {
+  categoryId: number;
+  categoryName: string;
+  description: string;
+}
+
 interface Product {
   id: string;
   name: string;
@@ -36,7 +42,8 @@ interface Product {
   barcode?: string;
   units: ProductUnit[];
   selectedUnit: string;
-  category?: string;
+  categoryId?: number;
+  categoryName?: string;
   quantity?: number;
   lastUpdated?: string;
   imageUrl?: string;
@@ -76,7 +83,7 @@ const ProductItem = memo(({ item, onEdit, onDelete }: {
       <View style={styles.productInfo}>
         <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
         <Text style={styles.productBarcode}>Mã: {item.barcode || 'Chưa có'}</Text>
-        <Text style={styles.productCategory}>{item.category}</Text>
+        <Text style={styles.productCategory}>{item.categoryName || 'Chưa phân loại'}</Text>
         
         <View style={styles.productDetails}>
           <View style={styles.priceContainer}>
@@ -156,6 +163,7 @@ const ProductsScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [searchText, setSearchText] = useState('');
@@ -163,13 +171,10 @@ const ProductsScreen = () => {
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
 
-  // Get unique categories
-  const categories = useMemo(() => {
-    const distinct = Array.from(new Set(
-      products.map(p => p.category).filter((c): c is string => !!c)
-    ));
-    return ['Tất cả', ...distinct];
-  }, [products]);
+  // Get category names for display
+  const categoryNames = useMemo(() => {
+    return ['Tất cả', ...categories.map(cat => cat.categoryName)];
+  }, [categories]);
 
   // Filter products based on search and category
   const filteredProducts = useMemo(() => {
@@ -177,7 +182,7 @@ const ProductsScreen = () => {
 
     // Filter by category
     if (selectedCategory !== 'Tất cả') {
-      filtered = filtered.filter(product => product.category === selectedCategory);
+      filtered = filtered.filter(product => product.categoryName === selectedCategory);
     }
 
     // Filter by search text
@@ -186,7 +191,7 @@ const ProductsScreen = () => {
       filtered = filtered.filter(product => 
         product.name.toLowerCase().includes(searchTerm) ||
         product.barcode?.includes(searchTerm) ||
-        product.category?.toLowerCase().includes(searchTerm)
+        product.categoryName?.toLowerCase().includes(searchTerm)
       );
     }
 
@@ -213,6 +218,36 @@ const ProductsScreen = () => {
       keyboardDidShowListener?.remove();
       keyboardDidHideListener?.remove();
     };
+  }, []);
+
+  const loadCategories = useCallback(async () => {
+    try {
+      const shopId = (await getShopId()) ?? 0;
+      const token = await getAuthToken();
+      
+      if (shopId <= 0) return;
+      
+      const url = `${API_URL}/api/categories?shopId=${shopId}&page=1&pageSize=100`;
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const data = await res.json();
+      const items: any[] = Array.isArray(data?.items) ? data.items : [];
+      
+      console.log('📂 Categories API response:', data);
+      console.log('📂 Categories items:', items);
+      
+      const mappedCategories: Category[] = items.map((cat: any) => ({
+        categoryId: Number(cat.categoryId ?? 0),
+        categoryName: String(cat.categoryName ?? ''),
+        description: String(cat.description ?? ''),
+      }));
+      
+      console.log('📂 Mapped categories:', mappedCategories);
+      setCategories(mappedCategories);
+    } catch (error) {
+      console.error('Failed to load categories:', error);
+    }
   }, []);
 
   const loadProducts = useCallback(async (showLoader: boolean, force: boolean = false) => {
@@ -245,12 +280,24 @@ const ProductsScreen = () => {
       });
       const data = await res.json();
       const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+      
+      console.log('📦 Products API response:', data);
+      console.log('📦 Products items:', items);
+      
+      // Debug: Check first product's category data
+      if (items.length > 0) {
+        console.log('📦 First product sample:', items[0]);
+        console.log('📦 Product categoryId:', items[0]?.categoryId);
+        console.log('📦 Product categoryName:', items[0]?.categoryName);
+      }
+      
       let mapped: Product[] = items.map((p: any, idx: number) => ({
         id: String(p.id ?? p.productId ?? idx + 1),
         name: String(p.productName ?? p.name ?? 'Sản phẩm'),
         price: Number(p.price ?? p.defaultPrice ?? 0),
         barcode: p.barcode ? String(p.barcode) : undefined,
-        category: String(p.categoryName ?? p.category?.categoryName ?? ''),
+        categoryId: typeof p.categoryId === 'number' ? p.categoryId : undefined,
+        categoryName: p.categoryName ? String(p.categoryName) : 'Chưa phân loại',
         quantity: typeof p.quantity === 'number' ? p.quantity : (typeof p.stock === 'number' ? p.stock : undefined),
         lastUpdated: p.updateAt ? String(p.updateAt).slice(0, 10) : (p.updatedAt ? String(p.updatedAt).slice(0,10) : undefined),
         imageUrl: p.imageUrl ? String(p.imageUrl) : undefined,
@@ -302,16 +349,23 @@ const ProductsScreen = () => {
     }
   }, []);
 
+  // Note: Products already have categoryName from API, no need for enrichment
+
   useEffect(() => {
-    // Load from cache or fetch if stale
-    loadProducts(true, false);
-  }, [loadProducts]);
+    // Load categories first, then products
+    const loadData = async () => {
+      await loadCategories();
+      await loadProducts(true, false);
+    };
+    loadData();
+  }, [loadCategories, loadProducts]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    await loadCategories();
     await loadProducts(false, true); // force refresh
     setRefreshing(false);
-  }, [loadProducts]);
+  }, [loadCategories, loadProducts]);
 
   const handleSearchChange = useCallback((text: string) => {
     setSearchText(text);
@@ -445,7 +499,7 @@ const ProductsScreen = () => {
           {/* Categories */}
           <View style={styles.categoriesContainer}>
             <FlatList
-              data={categories}
+              data={categoryNames}
               renderItem={renderCategory}
               keyExtractor={keyExtractor}
               horizontal

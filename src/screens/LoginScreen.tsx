@@ -127,17 +127,17 @@ const LoginScreen = () => {
             if (openId > 0) await setShiftId(openId);
           }
         } catch {}
-        // Skip FCM registration on auto-login silent path
-        if (!silent) {
-          try {
-            if (!isEmulator) {
-              const tokenToSend = fcmToken || (await fcmService.getFCMToken().catch(() => null));
-              if (tokenToSend) {
-                const derivedUserId = (typeof result?.userId === 'number' && result.userId) ?? (typeof result?.data?.userId === 'number' && result.data.userId) ?? 0;
-                await fetch(`${API_URL}/api/Fcm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: derivedUserId, fcmToken: tokenToSend, uniqueId: null }) });
-              }
+        // Register FCM token after successful login
+        try {
+          if (!isEmulator) {
+            const tokenToSend = fcmToken || (await fcmService.getFCMToken().catch(() => null));
+            if (tokenToSend) {
+              const derivedUserId = result?.data?.userId ?? 0;
+              await fcmService.registerFCMToken(derivedUserId, tokenToSend, null);
             }
-          } catch {}
+          }
+        } catch (error) {
+          console.error('🔥 FCM registration error:', error);
         }
         navigation.reset({ index: 0, routes: [{ name: 'MainApp' }] });
       } else if (!silent) {

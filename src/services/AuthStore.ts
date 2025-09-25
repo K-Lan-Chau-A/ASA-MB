@@ -133,3 +133,38 @@ export const clearCredentials = async (): Promise<void> => {
   try { await AsyncStorage.removeItem(CREDS_KEY); } catch {}
 };
 
+// Register FCM token for the current logged-in user
+export const registerFCMTokenForCurrentUser = async (fcmToken: string, uniqueId: string | null = null): Promise<boolean> => {
+  try {
+    const authData = await authStore.load();
+    if (!authData?.userId || !authData?.accessToken) {
+      console.log('[AuthStore][registerFCMTokenForCurrentUser] No valid auth data found');
+      return false;
+    }
+
+    const response = await fetch(`${API_URL}/api/fcm`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authData.accessToken}`,
+      },
+      body: JSON.stringify({
+        userId: authData.userId,
+        fcmToken,
+        uniqueId,
+      }),
+    });
+
+    if (response.ok) {
+      console.log('[AuthStore][registerFCMTokenForCurrentUser] FCM token registered successfully');
+      return true;
+    } else {
+      console.error('[AuthStore][registerFCMTokenForCurrentUser] Failed to register FCM token:', response.status);
+      return false;
+    }
+  } catch (error) {
+    console.error('[AuthStore][registerFCMTokenForCurrentUser] Error:', error);
+    return false;
+  }
+};
+
