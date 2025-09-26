@@ -547,7 +547,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         <TouchableOpacity onPress={handleCancel}>
           <Icon name="close" size={24} color="#000" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{isEditing ? 'Sửa sản phẩm' : 'Thêm sản phẩm'}</Text>
+        <Text style={styles.headerTitle}>{isEditing ? 'Sửa sản phẩm' : 'Nhập sản phẩm'}</Text>
         <View style={{ width: 24 }} />
       </View>
 

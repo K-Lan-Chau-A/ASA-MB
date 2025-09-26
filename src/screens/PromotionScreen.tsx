@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform, Modal } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform, Modal, FlatList, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
@@ -25,6 +25,71 @@ const PromotionScreen = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  // no local UI state for select-all; derive from current selection
+  const [isLoading, setIsLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [promotions, setPromotions] = useState<Array<{ promotionId: number; name: string; value: number; type: number; startDate: string; endDate: string; startTime?: string; endTime?: string }>>([]);
+  const [productsModalOpen, setProductsModalOpen] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productsOfPromotion, setProductsOfPromotion] = useState<string[]>([]);
+  const [productsModalTitle, setProductsModalTitle] = useState<string>('Sản phẩm áp dụng');
+
+  const loadPromotions = useCallback(async () => {
+    try {
+      if (!refreshing) setIsLoading(true);
+      const shopId = (await getShopId()) ?? 0;
+      const token = await getAuthToken();
+      const url = `${API_URL}/api/promotions?ShopId=${shopId}&page=1&pageSize=100`;
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      const data = await res.json().catch(() => ({}));
+      const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+      const mapped = items.map((p: any) => ({
+        promotionId: Number(p.promotionId ?? p.id ?? 0),
+        name: String(p.name ?? ''),
+        value: Number(p.value ?? 0),
+        type: Number(p.type ?? 1),
+        startDate: String(p.startDate ?? ''),
+        endDate: String(p.endDate ?? ''),
+        startTime: p.startTime ? String(p.startTime) : undefined,
+        endTime: p.endTime ? String(p.endTime) : undefined,
+      }));
+      setPromotions(mapped);
+    } catch {
+      setPromotions([]);
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  }, [refreshing]);
+
+  useEffect(() => { loadPromotions(); }, [loadPromotions]);
+
+  const filteredPromotions = useMemo(() => {
+    const term = searchText.trim().toLowerCase();
+    if (!term) return promotions;
+    return promotions.filter(p => p.name.toLowerCase().includes(term));
+  }, [promotions, searchText]);
+
+  const openPromotionProducts = useCallback(async (promotionId: number, promotionName: string) => {
+    try {
+      setProductsModalTitle(`Sản phẩm áp dụng - ${promotionName}`);
+      setProductsModalOpen(true);
+      setProductsLoading(true);
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}/api/promotion-products?PromotionId=${promotionId}&page=1&pageSize=100`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const data = await res.json().catch(() => ({}));
+      const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+      const names = items.map((i: any) => String(i.productName ?? ''))
+        .filter((n: string) => n.trim().length > 0);
+      setProductsOfPromotion(names);
+    } catch {
+      setProductsOfPromotion([]);
+    } finally {
+      setProductsLoading(false);
+    }
+  }, []);
 
   // Load product options
   useEffect(() => {
@@ -60,6 +125,21 @@ const PromotionScreen = () => {
       return matchSearch && matchCategory;
     });
   }, [allProducts, productSearch, selectedCategory]);
+
+  const handleSelectAllInView = useCallback(() => {
+    const ids = filteredProducts.map(p => p.id);
+    const allSelected = ids.length > 0 && ids.every(id => selectedProductIds.includes(id));
+    if (allSelected) {
+      setSelectedProductIds(prev => prev.filter(id => !ids.includes(id)));
+    } else {
+      setSelectedProductIds(prev => Array.from(new Set([...prev, ...ids])));
+    }
+  }, [filteredProducts, selectedProductIds]);
+
+  const allSelectedInView = useMemo(() => {
+    const ids = filteredProducts.map(p => p.id);
+    return ids.length > 0 && ids.every(id => selectedProductIds.includes(id));
+  }, [filteredProducts, selectedProductIds]);
 
   const validate = useCallback(() => {
     if (!name.trim()) {
@@ -98,13 +178,22 @@ const PromotionScreen = () => {
       setIsSubmitting(true);
       const shopId = (await getShopId()) ?? 0;
       const token = await getAuthToken();
+      const normalizeTime = (t: string) => {
+        const v = (t || '').trim();
+        if (!v) return '';
+        // expect HH:mm, append :00 seconds
+        if (/^\d{2}:\d{2}$/.test(v)) return `${v}:00`;
+        // if already HH:mm:ss keep as is
+        if (/^\d{2}:\d{2}:\d{2}$/.test(v)) return v;
+        return v;
+      };
       const payload = {
         shopId,
         name: name.trim(),
         startDate: startDate.trim(),
         endDate: endDate.trim(),
-        startTime: startTime.trim(),
-        endTime: endTime.trim(),
+        startTime: normalizeTime(startTime),
+        endTime: normalizeTime(endTime),
         value: type === 2 ? Math.round(parseFloat(value) * 100) / 100 : Math.round(parseFloat(value)),
         type,
         productIds: selectedProductIds,
@@ -142,6 +231,8 @@ const PromotionScreen = () => {
       setType(1);
       setValue('');
       setSelectedProductIds([]);
+      setIsCreateOpen(false);
+      loadPromotions();
     } catch (e) {
       Alert.alert('Lỗi', 'Không thể kết nối máy chủ');
     } finally {
@@ -179,9 +270,37 @@ const PromotionScreen = () => {
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'height' : 'padding'} style={{ flex: 1 }}>
-        <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
-          {/* Placeholder list / empty state could go here */}
-        </ScrollView>
+        <View style={styles.content}>
+          {isLoading ? (
+            <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color="#009DA5" />
+            </View>
+          ) : (
+            <FlatList
+              data={filteredPromotions}
+              keyExtractor={(item) => String(item.promotionId)}
+              renderItem={({ item }) => {
+                const isPercent = item.type === 2;
+                const valueText = isPercent ? `${item.value}%` : `${item.value.toLocaleString('vi-VN')}₫`;
+                const timeRange = `${item.startTime || '00:00:00'} ${item.startDate} • ${item.endTime || '00:00:00'} ${item.endDate}`;
+                return (
+                  <TouchableOpacity style={styles.promoItem} onPress={() => openPromotionProducts(item.promotionId, item.name)}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.promoName}>{item.name}</Text>
+                      <Text style={styles.promoMeta}>{timeRange}</Text>
+                    </View>
+                    <View style={styles.promoBadge}>
+                      <Text style={styles.promoBadgeText}>{valueText}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+              ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+              refreshing={refreshing}
+              onRefresh={() => setRefreshing(true)}
+            />
+          )}
+        </View>
       </KeyboardAvoidingView>
 
       {/* Create Modal */}
@@ -285,16 +404,22 @@ const PromotionScreen = () => {
                      ))}
                    </ScrollView>
 
-                   {/* Search bar */}
-                   <View style={[styles.searchContainer, { marginHorizontal: 8, marginBottom: 8 }]}>
-                     <Icon name="magnify" size={18} color="#666" />
-                     <TextInput
-                       style={[styles.searchInput, { paddingVertical: 8 }]}
-                       placeholder="Tìm sản phẩm..."
-                       value={productSearch}
-                       onChangeText={setProductSearch}
-                     />
-                   </View>
+                  {/* Search row with Select All */}
+                  <View style={styles.modalSearchRow}>
+                    <View style={[styles.searchContainer, { flex: 1, marginLeft: 8 }] }>
+                      <Icon name="magnify" size={18} color="#666" />
+                      <TextInput
+                        style={[styles.searchInput, { paddingVertical: 8 }]}
+                        placeholder="Tìm sản phẩm..."
+                        value={productSearch}
+                        onChangeText={setProductSearch}
+                      />
+                    </View>
+                    <TouchableOpacity style={styles.selectAllBtn} onPress={handleSelectAllInView}>
+                      <Icon name={allSelectedInView ? 'check-all' : 'select-all'} size={18} color="#FFF" />
+                      <Text style={styles.selectAllText}>{allSelectedInView ? 'Bỏ chọn' : 'Chọn tất cả'}</Text>
+                    </TouchableOpacity>
+                  </View>
 
                    <ScrollView style={{ maxHeight: 360 }}>
                      {filteredProducts.map((p) => {
@@ -322,6 +447,42 @@ const PromotionScreen = () => {
                 </View>
               </ScrollView>
             </KeyboardAvoidingView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Products of promotion modal */}
+      <Modal visible={productsModalOpen} transparent animationType="fade" onRequestClose={() => setProductsModalOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{productsModalTitle}</Text>
+              <TouchableOpacity onPress={() => setProductsModalOpen(false)}>
+                <Icon name="close" size={22} color="#666" />
+              </TouchableOpacity>
+            </View>
+            {productsLoading ? (
+              <View style={{ padding: 16 }}>
+                <ActivityIndicator color="#009DA5" />
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 420 }}>
+                {productsOfPromotion.length === 0 ? (
+                  <View style={{ padding: 16 }}>
+                    <Text style={{ color: '#666' }}>Không có sản phẩm áp dụng</Text>
+                  </View>
+                ) : (
+                  productsOfPromotion.map((n, idx) => (
+                    <View key={`${n}-${idx}`} style={styles.optionRow}>
+                      <Text style={styles.optionText}>{n}</Text>
+                    </View>
+                  ))
+                )}
+              </ScrollView>
+            )}
+            <TouchableOpacity style={styles.modalPrimaryBtn} onPress={() => setProductsModalOpen(false)}>
+              <Text style={styles.modalPrimaryText}>Đóng</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -401,6 +562,14 @@ const styles = StyleSheet.create({
   catChipActive: { backgroundColor: '#009DA5', borderColor: '#009DA5' },
   catChipText: { fontSize: 12, color: '#666', fontWeight: '600' },
   catChipTextActive: { color: '#FFFFFF' },
+  modalSearchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 8, marginBottom: 8 },
+  selectAllBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#009DA5', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8 },
+  selectAllText: { color: '#FFF', fontWeight: '700', marginLeft: 6, fontSize: 12 },
+  promoItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E5E5E5' },
+  promoName: { fontSize: 14, fontWeight: '700', color: '#000' },
+  promoMeta: { fontSize: 12, color: '#666', marginTop: 4 },
+  promoBadge: { backgroundColor: '#009DA5', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14 },
+  promoBadgeText: { color: '#FFF', fontWeight: '700' },
 });
 
 export default PromotionScreen;

@@ -67,7 +67,40 @@ const ConfirmOrderScreen = () => {
   const [qrData, setQrData] = useState<{ url: string; amount: number; orderId: number } | null>(null);
   const qrPollTimer = useRef<NodeJS.Timeout | null>(null);
 
-  const [availablePromoCodes] = useState(['GIAM10', 'GIAM50K', 'WELCOME']);
+  type Voucher = { voucherId: number; code: string; type: number; value: number; expired: string };
+  const [vouchers, setVouchers] = useState<Voucher[]>([]);
+  const [loadingVouchers, setLoadingVouchers] = useState(false);
+
+  useEffect(() => {
+    const loadVouchers = async () => {
+      try {
+        setLoadingVouchers(true);
+        const shopId = (await getShopId()) ?? 0;
+        const token = await getAuthToken();
+        const res = await fetch(`${API_URL}/api/vouchers?ShopId=${shopId}&page=1&pageSize=100`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        const data = await res.json().catch(() => ({}));
+        const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+        const now = new Date();
+        const mapped: Voucher[] = items.map((v: any) => ({
+          voucherId: Number(v.voucherId ?? v.id ?? 0),
+          code: String(v.code ?? ''),
+          type: Number(v.type ?? 1),
+          value: Number(v.value ?? 0),
+          expired: String(v.expired ?? ''),
+        })).filter(v => {
+          try { return new Date(v.expired) >= now; } catch { return false; }
+        });
+        setVouchers(mapped);
+      } catch {
+        setVouchers([]);
+      } finally {
+        setLoadingVouchers(false);
+      }
+    };
+    loadVouchers();
+  }, []);
 
   const calculateDiscount = useCallback(() => {
     if (!discountPercentage) return 0;
@@ -233,28 +266,23 @@ const ConfirmOrderScreen = () => {
   };
 
   const handleApplyPromoCode = () => {
-    if (!promoCode.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng nhập mã khuyến mãi');
-      return;
-    }
-    
-    // Simulate promo code validation
-    const validPromoCodes: { [key: string]: number } = {
-      'GIAM10': 10, // 10% discount
-      'GIAM50K': 50000, // 50,000đ discount
-      'WELCOME': 15, // 15% discount
-    };
-    
-    const discount = validPromoCodes[promoCode.toUpperCase()];
-    if (discount) {
-      if (promoCode.toUpperCase() === 'GIAM50K') {
-        setAppliedDiscount(Math.min(discount, originalTotal));
-      } else {
-        setAppliedDiscount(Math.min((originalTotal * discount) / 100, originalTotal));
-      }
-      Alert.alert('Thành công', 'Áp dụng mã khuyến mãi thành công!');
+    if (!promoCode.trim()) { Alert.alert('Lỗi', 'Vui lòng nhập mã khuyến mãi'); return; }
+    const v = vouchers.find(v => v.code.toUpperCase() === promoCode.trim().toUpperCase());
+    if (!v) { Alert.alert('Lỗi', 'Mã khuyến mãi không hợp lệ hoặc đã hết hạn'); return; }
+    applyVoucher(v);
+  };
+
+  const applyVoucher = (v: Voucher) => {
+    if (!v) return;
+    setPromoCode(v.code);
+    if (v.type === 2) {
+      const pct = Number(v.value || 0);
+      const discount = Math.min((originalTotal * pct) / 100, originalTotal);
+      setAppliedDiscount(discount);
     } else {
-      Alert.alert('Lỗi', 'Mã khuyến mãi không hợp lệ');
+      const amt = Number(v.value || 0);
+      const discount = Math.min(amt, originalTotal);
+      setAppliedDiscount(discount);
     }
   };
 
@@ -556,21 +584,23 @@ const ConfirmOrderScreen = () => {
               <Icon name="ticket-percent" size={20} color="#009DA5" />
               <Text style={styles.promoTitle}>Mã khuyến mãi</Text>
             </View>
-            <View style={styles.discountRow}>
-              <Picker
-                selectedValue={promoCode}
-                style={styles.promoInput}
-                onValueChange={(itemValue: string) => setPromoCode(itemValue)}
-              >
-                <Picker.Item label="Chọn mã khuyến mãi" value="" />
-                {availablePromoCodes.map((code) => (
-                  <Picker.Item key={code} label={code} value={code} />
-                ))}
-              </Picker>
-              <TouchableOpacity style={styles.applyButton} onPress={handleApplyPromoCode}>
-                <Text style={styles.applyButtonText}>Áp dụng</Text>
-              </TouchableOpacity>
-            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              {loadingVouchers ? (
+                <View style={{ paddingVertical: 8 }}><ActivityIndicator color="#009DA5" /></View>
+              ) : vouchers.length === 0 ? (
+                <View style={styles.voucherChipDisabled}><Text style={styles.voucherChipTextDisabled}>Không có voucher khả dụng</Text></View>
+              ) : (
+                vouchers.map(v => {
+                  const active = promoCode.trim().toUpperCase() === v.code.toUpperCase();
+                  return (
+                    <TouchableOpacity key={v.voucherId} style={[styles.voucherChip, active && styles.voucherChipActive]} onPress={() => applyVoucher(v)}>
+                      <Text style={[styles.voucherCode, active && styles.voucherCodeActive]}>{v.code}</Text>
+                      <Text style={[styles.voucherValue, active && styles.voucherValueActive]}>{v.type === 2 ? `${v.value}%` : `${Number(v.value).toLocaleString('vi-VN')}đ`}</Text>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
           </View>
 
           <View style={styles.divider}>
@@ -601,7 +631,7 @@ const ConfirmOrderScreen = () => {
               </View>
               <TextInput
                 style={styles.reasonInput}
-                placeholder="Lý do giảm giá (tùy chọn)"
+                placeholder="Lý do giảm giá"
                 value={discountReason}
                 onChangeText={setDiscountReason}
                 placeholderTextColor="#999"
@@ -1029,6 +1059,24 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 4,
   },
+  voucherChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  voucherChipActive: { backgroundColor: '#F0F9FA', borderColor: '#009DA5' },
+  voucherCode: { fontSize: 12, fontWeight: '700', color: '#999' },
+  voucherValue: { fontSize: 12, fontWeight: '700', color: '#999' },
+  voucherCodeActive: { color: '#009DA5' },
+  voucherValueActive: { color: '#009DA5' },
+  voucherChipDisabled: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#F5F5F5', borderRadius: 20, borderWidth: 1, borderColor: '#E5E5E5' },
+  voucherChipTextDisabled: { fontSize: 12, color: '#999' },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
