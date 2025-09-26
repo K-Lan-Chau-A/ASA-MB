@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, Image, TouchableOpacity, Modal, ScrollView, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -22,17 +22,32 @@ type Txn = {
 const InventoryTransactionScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [txns, setTxns] = useState<Txn[]>([]);
   const [productNameById, setProductNameById] = useState<Record<number, string>>({});
   const [unitNameById, setUnitNameById] = useState<Record<number, string>>({});
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [imageViewerVisible, setImageViewerVisible] = useState(false);
+  const [imageViewerUri, setImageViewerUri] = useState<string | undefined>(undefined);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (nextPage?: number, isRefreshing?: boolean) => {
     try {
-      setLoading(true);
+      const targetPage = nextPage ?? 1;
+      if (isRefreshing) {
+        setRefreshing(true);
+      } else if (targetPage === 1) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
+      }
       const shopId = (await getShopId()) ?? 0;
       const token = await getAuthToken();
       // Load transactions
-      const tRes = await fetch(`${API_URL}/api/inventory-transactions?ShopId=${shopId}&page=1&pageSize=100`, {
+      const tRes = await fetch(`${API_URL}/api/inventory-transactions?ShopId=${shopId}&page=${targetPage}&pageSize=${pageSize}` , {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       const tData = await tRes.json().catch(() => ({}));
@@ -44,14 +59,28 @@ const InventoryTransactionScreen = () => {
         orderId: i.orderId != null ? Number(i.orderId) : null,
         unitId: i.unitId != null ? Number(i.unitId) : null,
         quantity: Number(i.quantity ?? 0),
-        imageUrl: i.imageUrl ? String(i.imageUrl) : undefined,
+        imageUrl: i.imageUrl ? String(i.imageUrl) : (i.inventoryTransImageURL ? String(i.inventoryTransImageURL) : undefined),
         price: Number(i.price ?? 0),
         createdAt: String(i.createdAt ?? ''),
       }));
-      setTxns(mappedTxns);
+      if (targetPage === 1) {
+        setTxns(mappedTxns);
+      } else {
+        setTxns(prev => {
+          const seen = new Set(prev.map(x => x.inventoryTransactionId));
+          const merged = [...prev];
+          mappedTxns.forEach(m => { if (!seen.has(m.inventoryTransactionId)) merged.push(m); });
+          return merged;
+        });
+      }
+
+      // Pagination meta
+      if (typeof tData?.totalPages === 'number') setTotalPages(tData.totalPages);
+      if (typeof tData?.totalCount === 'number') setTotalCount(tData.totalCount);
+      setPage(targetPage);
 
       // Build unique product and unit ids
-      const productIds = Array.from(new Set(mappedTxns.map(t => t.productId).filter(Boolean)));
+      const productIds = Array.from(new Set((targetPage === 1 ? mappedTxns : mappedTxns.filter(m => !(m.productId in productNameById))).map(t => t.productId).filter(Boolean)));
       // Fetch product names in one call (page large enough)
       try {
         const pRes = await fetch(`${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=500`, {
@@ -64,7 +93,7 @@ const InventoryTransactionScreen = () => {
           const id = Number(p.id ?? p.productId ?? 0);
           if (id) nameMap[id] = String(p.productName ?? p.name ?? 'Sản phẩm');
         });
-        setProductNameById(nameMap);
+        setProductNameById(prev => ({ ...prev, ...nameMap }));
       } catch {}
 
       // Fetch unit names per product (parallel)
@@ -87,16 +116,34 @@ const InventoryTransactionScreen = () => {
           })
         );
         const merged: Record<number, string> = entries.reduce((acc, m) => ({ ...acc, ...m }), {} as Record<number, string>);
-        setUnitNameById(merged);
+        setUnitNameById(prev => ({ ...prev, ...merged }));
       } catch {}
     } catch {
       setTxns([]);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
+      setRefreshing(false);
     }
-  }, []);
+  }, [pageSize]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(1, true); }, []);
+
+  const onRefresh = useCallback(() => {
+    setProductNameById({});
+    setUnitNameById({});
+    setPage(1);
+    setTotalPages(1);
+    setTotalCount(0);
+    load(1, true);
+  }, [load]);
+
+  const onEndReached = useCallback(() => {
+    if (loadingMore || loading || refreshing) return;
+    if (page < totalPages) {
+      load(page + 1);
+    }
+  }, [loadingMore, loading, refreshing, page, totalPages, load]);
 
   const renderItem = ({ item }: { item: Txn }) => {
     const isOut = item.type === 1; // bán hàng
@@ -123,7 +170,9 @@ const InventoryTransactionScreen = () => {
           <Text style={styles.time}>{timeText}</Text>
         </View>
         {!!item.imageUrl && (
-          <Image source={{ uri: item.imageUrl }} style={styles.thumb} />
+          <TouchableOpacity onPress={() => { setImageViewerUri(item.imageUrl); setImageViewerVisible(true); }}>
+            <Image source={{ uri: item.imageUrl }} style={styles.thumb} resizeMode="cover" />
+          </TouchableOpacity>
         )}
       </View>
     );
@@ -150,9 +199,47 @@ const InventoryTransactionScreen = () => {
             keyExtractor={(i) => String(i.inventoryTransactionId)}
             renderItem={renderItem}
             ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            onEndReached={onEndReached}
+            onEndReachedThreshold={0.25}
+            ListFooterComponent={() => (
+              loadingMore ? (
+                <View style={{ paddingVertical: 12 }}>
+                  <ActivityIndicator size="small" color="#009DA5" />
+                </View>
+              ) : null
+            )}
           />
         )}
       </View>
+      <Modal
+        visible={imageViewerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setImageViewerVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <TouchableOpacity style={styles.modalCloseArea} onPress={() => setImageViewerVisible(false)}>
+            <Text style={styles.modalCloseText}>Đóng</Text>
+          </TouchableOpacity>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.modalImageContainer}
+            maximumZoomScale={3}
+            minimumZoomScale={1}
+            centerContent
+          >
+            {!!imageViewerUri && (
+              <Image
+                source={{ uri: imageViewerUri }}
+                style={styles.modalImage}
+                resizeMode="contain"
+              />
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -170,6 +257,11 @@ const styles = StyleSheet.create({
   price: { fontSize: 14, color: '#009DA5', fontWeight: '700' },
   time: { fontSize: 12, color: '#999', marginTop: 4 },
   thumb: { width: 44, height: 44, borderRadius: 6, marginLeft: 10 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)' },
+  modalCloseArea: { paddingHorizontal: 16, paddingVertical: 14, alignItems: 'flex-end' },
+  modalCloseText: { color: '#fff', fontSize: 16 },
+  modalImageContainer: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 16 },
+  modalImage: { width: Dimensions.get('window').width - 32, height: Dimensions.get('window').height - 100 },
 });
 
 export default InventoryTransactionScreen;

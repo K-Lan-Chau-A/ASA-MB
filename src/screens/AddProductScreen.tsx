@@ -86,6 +86,8 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [inventoryTotalPrice, setInventoryTotalPrice] = useState('');
   const [invoiceImage, setInvoiceImage] = useState('');
+  const [isProductImageUploading, setIsProductImageUploading] = useState(false);
+  const [isInvoiceImageUploading, setIsInvoiceImageUploading] = useState(false);
 
   const updateProduct = useCallback((field: keyof NewProduct, value: string) => {
     setProduct(prev => ({ ...prev, [field]: value }));
@@ -110,6 +112,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         {
           text: 'Chụp ảnh',
           onPress: () => {
+            setIsProductImageUploading(true);
             const cameraOptions: CameraOptions = {
               mediaType: 'photo',
               saveToPhotos: true,
@@ -119,13 +122,16 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
               if (response.didCancel) return;
               if (response.errorCode) {
                 Alert.alert('Lỗi', response.errorMessage || 'Không thể mở camera');
+                setIsProductImageUploading(false);
                 return;
               }
               const asset: Asset | undefined = response.assets && response.assets[0];
               if (asset?.uri) {
                 updateProduct('image', asset.uri);
+                setIsProductImageUploading(false);
               } else {
                 Alert.alert('Lỗi', 'Không lấy được ảnh vừa chụp');
+                setIsProductImageUploading(false);
               }
             });
           },
@@ -133,6 +139,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         {
           text: 'Thư viện',
           onPress: () => {
+            setIsProductImageUploading(true);
             const options: ImageLibraryOptions = {
               mediaType: 'photo',
               selectionLimit: 1,
@@ -142,18 +149,21 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
               if (response.didCancel) return;
               if (response.errorCode) {
                 Alert.alert('Lỗi', response.errorMessage || 'Không thể mở thư viện ảnh');
+                setIsProductImageUploading(false);
                 return;
               }
               const asset: Asset | undefined = response.assets && response.assets[0];
               if (asset?.uri) {
                 updateProduct('image', asset.uri);
+                setIsProductImageUploading(false);
               } else {
                 Alert.alert('Lỗi', 'Không lấy được ảnh đã chọn');
+                setIsProductImageUploading(false);
               }
             });
           },
         },
-        { text: 'Hủy', style: 'cancel' },
+        { text: 'Hủy', style: 'cancel', onPress: () => setIsProductImageUploading(false) },
       ]
     );
   }, [updateProduct]);
@@ -166,6 +176,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         {
           text: 'Chụp ảnh',
           onPress: () => {
+            setIsInvoiceImageUploading(true);
             const cameraOptions: CameraOptions = {
               mediaType: 'photo',
               saveToPhotos: true,
@@ -175,13 +186,16 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
               if (response.didCancel) return;
               if (response.errorCode) {
                 Alert.alert('Lỗi', response.errorMessage || 'Không thể mở camera');
+                setIsInvoiceImageUploading(false);
                 return;
               }
               const asset: Asset | undefined = response.assets && response.assets[0];
               if (asset?.uri) {
                 setInvoiceImage(asset.uri);
+                setIsInvoiceImageUploading(false);
               } else {
                 Alert.alert('Lỗi', 'Không lấy được ảnh vừa chụp');
+                setIsInvoiceImageUploading(false);
               }
             });
           },
@@ -189,6 +203,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         {
           text: 'Thư viện',
           onPress: () => {
+            setIsInvoiceImageUploading(true);
             const options: ImageLibraryOptions = {
               mediaType: 'photo',
               selectionLimit: 1,
@@ -198,18 +213,21 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
               if (response.didCancel) return;
               if (response.errorCode) {
                 Alert.alert('Lỗi', response.errorMessage || 'Không thể mở thư viện ảnh');
+                setIsInvoiceImageUploading(false);
                 return;
               }
               const asset: Asset | undefined = response.assets && response.assets[0];
               if (asset?.uri) {
                 setInvoiceImage(asset.uri);
+                setIsInvoiceImageUploading(false);
               } else {
                 Alert.alert('Lỗi', 'Không lấy được ảnh đã chọn');
+                setIsInvoiceImageUploading(false);
               }
             });
           },
         },
-        { text: 'Hủy', style: 'cancel' },
+        { text: 'Hủy', style: 'cancel', onPress: () => setIsInvoiceImageUploading(false) },
       ]
     );
   }, []);
@@ -252,6 +270,73 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
     };
     fetchAll();
   }, []);
+
+  // If user enters/scans a barcode that already exists, prefill fields (except quantity and invoice image)
+  useEffect(() => {
+    let active = true;
+    const run = async () => {
+      try {
+        if (isEditing) return; // only for create flow
+        const bc = (product.barcode || '').trim();
+        if (!bc) return;
+        if (!shopId) return;
+        const token = await getAuthToken();
+        const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&Barcode=${encodeURIComponent(bc)}&page=1&pageSize=1`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        const data = await res.json().catch(() => ({}));
+        const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+        const found: any = items[0];
+        if (!active || !found) return;
+        // Prefill fields, do not override if user already typed values
+        setProduct(prev => ({
+          ...prev,
+          name: prev.name || String(found.productName ?? found.name ?? ''),
+          sellPrice: prev.sellPrice || (typeof found.price === 'number' ? String(found.price) : ''),
+          discount: prev.discount || (typeof found.discount === 'number' ? String(found.discount) : prev.discount),
+          image: prev.image || (found.productImageURL ? String(found.productImageURL) : (found.imageUrl ? String(found.imageUrl) : prev.image)),
+          // keep barcode, quantity untouched
+        }));
+        // Determine base and additional units from product-units API
+        try {
+          const prodId = Number(found.productId ?? found.id ?? 0);
+          if (prodId && shopId) {
+            const puRes = await fetch(`${API_URL}/api/product-units?ShopId=${shopId}&ProductId=${prodId}&page=1&pageSize=100`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            const puData = await puRes.json().catch(() => ({}));
+            const puItems: any[] = Array.isArray(puData?.items) ? puData.items : Array.isArray(puData) ? puData : [];
+            if (puItems.length > 0) {
+              const base = puItems.find((u: any) => Number(u.conversionFactor ?? 0) === 1) || puItems[0];
+              if (!baseUnit && base?.unitName) {
+                setBaseUnit(String(base.unitName));
+              }
+              if (additionalUnits.length === 0) {
+                const others = puItems
+                  .filter((u: any) => Number(u.conversionFactor ?? 0) !== 1)
+                  .map((u: any) => ({ unitName: String(u.unitName ?? ''), conversionRate: Number(u.conversionFactor ?? 0) || 0, unitPrice: typeof u.price === 'number' ? String(u.price) : '' }));
+                setAdditionalUnits(others);
+              }
+            } else if (!baseUnit) {
+              setBaseUnit('');
+            }
+          } else if (!baseUnit) {
+            setBaseUnit('');
+          }
+        } catch {
+          if (!baseUnit) setBaseUnit('');
+        }
+        // If category exists, set by categoryName
+        const catName: string | undefined = found.categoryName ? String(found.categoryName) : undefined;
+        if (catName && !product.category) {
+          updateProduct('category', catName);
+        }
+      } catch {}
+    };
+    // slight debounce to avoid rapid calls while typing barcode
+    const t = setTimeout(run, 300);
+    return () => { active = false; clearTimeout(t); };
+  }, [product.barcode, shopId, isEditing, baseUnit, product.category, updateProduct]);
 
   // Fetch cost when editing if not provided
   useEffect(() => {
@@ -347,6 +432,10 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
   }, [navigation]);
 
   const handleSaveProduct = useCallback(() => {
+    if (isProductImageUploading || isInvoiceImageUploading) {
+      Alert.alert('Vui lòng chờ', 'Ảnh đang tải lên, vui lòng đợi hoàn tất trước khi lưu');
+      return;
+    }
     // Validate required fields
     if (!product.name.trim()) {
       Alert.alert('Lỗi', 'Vui lòng nhập tên sản phẩm');
@@ -398,7 +487,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
     }
 
     saveProduct(sellPrice, unitImportPrice, totalImport);
-  }, [product, navigation, inventoryTotalPrice]);
+  }, [product, navigation, inventoryTotalPrice, isProductImageUploading, isInvoiceImageUploading]);
 
   const saveProduct = useCallback(async (sellPrice: number, unitImportPrice: number, totalImportPrice: number) => {
     try {
@@ -456,21 +545,21 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         const name = uri.split('/').pop() || 'image.jpg';
         const ext = (name.split('.').pop() || 'jpg').toLowerCase();
         const type = ext === 'png' ? 'image/png' : ext === 'jpeg' || ext === 'jpg' ? 'image/jpeg' : 'application/octet-stream';
-        // Image for product
-        form.append('ImageFile', {
+        // Image for product (updated API field name)
+        form.append('ProductImageFile', {
           uri,
           name,
           type,
         } as any);
       }
 
-      // Attach invoice image file for inventory transaction if provided
+      // Attach invoice image file for inventory transaction if provided (updated API field name)
       if (!isEditing && (invoiceImage || '').trim()) {
         const uri = invoiceImage.trim();
         const name = uri.split('/').pop() || 'invoice.jpg';
         const ext = (name.split('.').pop() || 'jpg').toLowerCase();
         const type = ext === 'png' ? 'image/png' : ext === 'jpeg' || ext === 'jpg' ? 'image/jpeg' : 'application/octet-stream';
-        form.append('InventoryTransaction.ImageFile', {
+        form.append('InventoryTransaction.InventoryTransImageFile', {
           uri,
           name,
           type,
@@ -517,7 +606,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
 
       Alert.alert(
         'Thành công',
-        isEditing ? 'Đã cập nhật sản phẩm!' : 'Sản phẩm đã được thêm thành công!',
+        isEditing ? 'Đã cập nhật sản phẩm!' : 'Sản phẩm đã nhập thêm thành công!',
         [
           {
             text: 'OK',
@@ -868,11 +957,11 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
 
       {/* Save Button */}
       <View style={styles.footer}>
-        <TouchableOpacity style={[styles.saveButton, isSaving && { opacity: 0.7 }]} onPress={handleSaveProduct} disabled={isSaving}>
+        <TouchableOpacity style={[styles.saveButton, (isSaving || isProductImageUploading || isInvoiceImageUploading) && { opacity: 0.7 }]} onPress={handleSaveProduct} disabled={isSaving || isProductImageUploading || isInvoiceImageUploading}>
           {isSaving ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.saveButtonText}>Lưu sản phẩm</Text>
+            <Text style={styles.saveButtonText}>{(isProductImageUploading || isInvoiceImageUploading) ? 'Đang tải ảnh...' : 'Lưu sản phẩm'}</Text>
           )}
         </TouchableOpacity>
       </View>

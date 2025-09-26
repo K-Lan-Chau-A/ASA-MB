@@ -255,7 +255,7 @@ const ProductsScreen = () => {
     try {
       const shopId = (await getShopId()) ?? 0;
       const token = await getAuthToken();
-      const cacheKey = `products:${shopId}:v1`;
+      const cacheKey = `products:${shopId}:v2`;
 
       // Try cache first if not force
       if (!force && shopId > 0) {
@@ -300,7 +300,7 @@ const ProductsScreen = () => {
         categoryName: p.categoryName ? String(p.categoryName) : 'Chưa phân loại',
         quantity: typeof p.quantity === 'number' ? p.quantity : (typeof p.stock === 'number' ? p.stock : undefined),
         lastUpdated: p.updateAt ? String(p.updateAt).slice(0, 10) : (p.updatedAt ? String(p.updatedAt).slice(0,10) : undefined),
-        imageUrl: p.imageUrl ? String(p.imageUrl) : undefined,
+        imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
         units: [],
         selectedUnit: 'Cái',
       }));

@@ -595,7 +595,7 @@ const OrderScreen = () => {
             name: String(p.productName ?? p.name ?? 'Sản phẩm'),
             price: Number(p.price ?? 0),
             barcode: p.barcode ? String(p.barcode) : undefined,
-            imageUrl: p.imageUrl ? String(p.imageUrl) : undefined,
+            imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
             units,
             selectedUnit,
           };

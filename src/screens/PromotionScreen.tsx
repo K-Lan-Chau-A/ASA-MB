@@ -22,6 +22,7 @@ const PromotionScreen = () => {
   const [categories, setCategories] = useState<Array<{ categoryId: number; categoryName: string }>>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('Tất cả');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [status, setStatus] = useState<number>(1); // 1: active, 0: inactive
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
@@ -196,6 +197,7 @@ const PromotionScreen = () => {
         endTime: normalizeTime(endTime),
         value: type === 2 ? Math.round(parseFloat(value) * 100) / 100 : Math.round(parseFloat(value)),
         type,
+        status: typeof status === 'number' ? status : 1,
         productIds: selectedProductIds,
       } as any;
 
