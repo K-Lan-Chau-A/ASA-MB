@@ -142,26 +142,17 @@ export const registerFCMTokenForCurrentUser = async (fcmToken: string, uniqueId:
       return false;
     }
 
-    const response = await fetch(`${API_URL}/api/fcm`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authData.accessToken}`,
-      },
-      body: JSON.stringify({
-        userId: authData.userId,
-        fcmToken,
-        uniqueId,
-      }),
-    });
-
-    if (response.ok) {
-      console.log('[AuthStore][registerFCMTokenForCurrentUser] FCM token registered successfully');
-      return true;
-    } else {
-      console.error('[AuthStore][registerFCMTokenForCurrentUser] Failed to register FCM token:', response.status);
+    // Check if FCM is available (not on emulator)
+    const { isFCMAvailable } = await import('./FCMService');
+    const fcmAvailable = await isFCMAvailable();
+    if (!fcmAvailable) {
+      console.log('[AuthStore][registerFCMTokenForCurrentUser] FCM not available on emulator/simulator');
       return false;
     }
+
+    // Use FCMService for consistency
+    const { fcmService } = await import('./FCMService');
+    return await fcmService.registerFCMToken(authData.userId, fcmToken, uniqueId, authData.accessToken);
   } catch (error) {
     console.error('[AuthStore][registerFCMTokenForCurrentUser] Error:', error);
     return false;

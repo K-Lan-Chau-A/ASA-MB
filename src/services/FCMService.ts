@@ -2,15 +2,48 @@
 
 import messaging from '@react-native-firebase/messaging';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import DeviceInfo from 'react-native-device-info';
 import API_URL from '../config/api';
 
 const FCM_TOKEN_KEY = 'fcm_token';
 
 //Đã comment CODE để thuận tiện cho việc LOGIN BẰNG GIẢ LẬP KHÔNG CÓ FCM
 
+// Check if device is emulator/simulator
+const isEmulator = async (): Promise<boolean> => {
+  try {
+    const isEmulator = await DeviceInfo.isEmulator();
+    console.log('🔥 Device is emulator:', isEmulator);
+    return isEmulator;
+  } catch (error) {
+    console.error('🔥 Error checking emulator status:', error);
+    // Fallback: check common emulator indicators
+    if (Platform.OS === 'android') {
+      const model = DeviceInfo.getModel();
+      const brand = DeviceInfo.getBrand();
+      return model.toLowerCase().includes('emulator') || 
+             brand.toLowerCase().includes('emulator') ||
+             model.toLowerCase().includes('sdk') ||
+             brand.toLowerCase().includes('google_sdk');
+    } else if (Platform.OS === 'ios') {
+      const model = DeviceInfo.getModel();
+      return model.toLowerCase().includes('simulator');
+    }
+    return false;
+  }
+};
+
 class FCMService {
   async init() {
     console.log('🔥 Initializing FCM Service...');
+    
+    // Check if device is emulator
+    const isEmulatorDevice = await isEmulator();
+    if (isEmulatorDevice) {
+      console.log('🔥 FCM disabled on emulator/simulator');
+      return null;
+    }
     
     try {
       // Request permission for iOS
@@ -120,15 +153,29 @@ class FCMService {
     return messaging().setBackgroundMessageHandler(callback);
   }
 
-  async registerFCMToken(userId: number, fcmToken: string, uniqueId: string | null = null): Promise<boolean> {
+  async registerFCMToken(userId: number, fcmToken: string, uniqueId: string | null = null, accessToken?: string): Promise<boolean> {
     try {
+      // Check if device is emulator
+      const isEmulatorDevice = await isEmulator();
+      if (isEmulatorDevice) {
+        console.log('🔥 FCM registration skipped on emulator/simulator');
+        return false;
+      }
+
       console.log('🔥 Registering FCM token for userId:', userId);
+      
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Add Authorization header if accessToken is provided
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
       
       const response = await fetch(`${API_URL}/api/fcm`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           userId,
           fcmToken,
@@ -151,3 +198,9 @@ class FCMService {
 }
 
 export const fcmService = new FCMService();
+
+// Helper function to check if FCM is available (not on emulator)
+export const isFCMAvailable = async (): Promise<boolean> => {
+  const isEmulatorDevice = await isEmulator();
+  return !isEmulatorDevice;
+};

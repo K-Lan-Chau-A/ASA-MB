@@ -34,6 +34,10 @@ const PromotionScreen = () => {
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsOfPromotion, setProductsOfPromotion] = useState<string[]>([]);
   const [productsModalTitle, setProductsModalTitle] = useState<string>('Sản phẩm áp dụng');
+  const [editingPromotion, setEditingPromotion] = useState<any>(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [deletePromotionId, setDeletePromotionId] = useState<number | null>(null);
+  const [menuVisible, setMenuVisible] = useState<number | null>(null);
 
   const loadPromotions = useCallback(async () => {
     try {
@@ -91,6 +95,64 @@ const PromotionScreen = () => {
       setProductsLoading(false);
     }
   }, []);
+
+  const loadPromotionDetails = useCallback(async (promotionId: number) => {
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}/api/promotion-products?PromotionId=${promotionId}&page=1&pageSize=100`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const data = await res.json().catch(() => ({}));
+      const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+      const productIds = items.map((i: any) => Number(i.productId ?? i.id ?? 0)).filter(id => id > 0);
+      return productIds;
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const openEditPromotion = useCallback(async (promotion: any) => {
+    try {
+      setEditingPromotion(promotion);
+      const productIds = await loadPromotionDetails(promotion.promotionId);
+      
+      // Set form data
+      setName(promotion.name);
+      setStartDate(promotion.startDate);
+      setEndDate(promotion.endDate);
+      setStartTime(promotion.startTime || '');
+      setEndTime(promotion.endTime || '');
+      setType(promotion.type);
+      setValue(promotion.value.toString());
+      setSelectedProductIds(productIds);
+      setStatus(1); // Default to active
+      
+      setIsEditOpen(true);
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể tải thông tin khuyến mãi');
+    }
+  }, [loadPromotionDetails]);
+
+  const deletePromotion = useCallback(async (promotionId: number) => {
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}/api/promotions/${promotionId}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      
+      if (res.ok) {
+        Alert.alert('Thành công', 'Đã xóa khuyến mãi');
+        loadPromotions();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        const message = data?.message || 'Xóa khuyến mãi thất bại';
+        Alert.alert('Lỗi', message);
+      }
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể kết nối máy chủ');
+    }
+  }, [loadPromotions]);
 
   // Load product options
   useEffect(() => {
@@ -201,12 +263,16 @@ const PromotionScreen = () => {
         productIds: selectedProductIds,
       } as any;
 
+      const isEdit = editingPromotion !== null;
+      const url = isEdit ? `${API_URL}/api/promotions/${editingPromotion.promotionId}` : `${API_URL}/api/promotions`;
+      const method = isEdit ? 'PUT' : 'POST';
+
       try {
-        console.log('[Promotion/Create] payload:', payload);
+        console.log(`[Promotion/${isEdit ? 'Update' : 'Create'}] payload:`, payload);
       } catch {}
 
-      const res = await fetch(`${API_URL}/api/promotions`, {
-        method: 'POST',
+      const res = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -215,15 +281,15 @@ const PromotionScreen = () => {
       });
       const data = await res.json().catch(() => ({}));
       try {
-        console.log('[Promotion/Create] status:', res.status, res.statusText);
-        console.log('[Promotion/Create] response:', data);
+        console.log(`[Promotion/${isEdit ? 'Update' : 'Create'}] status:`, res.status, res.statusText);
+        console.log(`[Promotion/${isEdit ? 'Update' : 'Create'}] response:`, data);
       } catch {}
       if (!res.ok) {
-        const message = data?.message || 'Tạo khuyến mãi thất bại';
+        const message = data?.message || `${isEdit ? 'Cập nhật' : 'Tạo'} khuyến mãi thất bại`;
         Alert.alert('Lỗi', message);
         return;
       }
-      Alert.alert('Thành công', 'Đã tạo khuyến mãi');
+      Alert.alert('Thành công', `Đã ${isEdit ? 'cập nhật' : 'tạo'} khuyến mãi`);
       // Reset form
       setName('');
       setStartDate('');
@@ -233,14 +299,16 @@ const PromotionScreen = () => {
       setType(1);
       setValue('');
       setSelectedProductIds([]);
+      setEditingPromotion(null);
       setIsCreateOpen(false);
+      setIsEditOpen(false);
       loadPromotions();
     } catch (e) {
       Alert.alert('Lỗi', 'Không thể kết nối máy chủ');
     } finally {
       setIsSubmitting(false);
     }
-  }, [validate, name, startDate, endDate, startTime, endTime, type, value, selectedProductIds]);
+  }, [validate, name, startDate, endDate, startTime, endTime, type, value, selectedProductIds, editingPromotion]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top','bottom','left','right']}>
@@ -284,17 +352,87 @@ const PromotionScreen = () => {
               renderItem={({ item }) => {
                 const isPercent = item.type === 2;
                 const valueText = isPercent ? `${item.value}%` : `${item.value.toLocaleString('vi-VN')}₫`;
-                const timeRange = `${item.startTime || '00:00:00'} ${item.startDate} • ${item.endTime || '00:00:00'} ${item.endDate}`;
+                
+                // Format date from YYYY-MM-DD to DD/MM/YYYY
+                const formatDate = (dateStr: string) => {
+                  if (!dateStr) return '';
+                  const [year, month, day] = dateStr.split('-');
+                  return `${day}/${month}/${year}`;
+                };
+                
+                // Format time from HH:mm:ss to HH:mm
+                const formatTime = (timeStr: string) => {
+                  if (!timeStr) return '00:00';
+                  return timeStr.substring(0, 5); // Take only HH:mm part
+                };
+                
+                const startDate = formatDate(item.startDate);
+                const endDate = formatDate(item.endDate);
+                const startTime = formatTime(item.startTime || '00:00');
+                const endTime = formatTime(item.endTime || '00:00');
+                
+                const timeRange = `Từ ${startTime} ${startDate} đến ${endTime} ${endDate}`;
+                
                 return (
-                  <TouchableOpacity style={styles.promoItem} onPress={() => openPromotionProducts(item.promotionId, item.name)}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.promoName}>{item.name}</Text>
-                      <Text style={styles.promoMeta}>{timeRange}</Text>
-                    </View>
+                  <View style={styles.promoItem}>
+                    <TouchableOpacity style={{ flex: 1 }} onPress={() => openPromotionProducts(item.promotionId, item.name)}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.promoName}>{item.name}</Text>
+                        <Text style={styles.promoMeta}>{timeRange}</Text>
+                      </View>
+                    </TouchableOpacity>
                     <View style={styles.promoBadge}>
                       <Text style={styles.promoBadgeText}>{valueText}</Text>
                     </View>
-                  </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={styles.menuBtn}
+                      onPress={() => setMenuVisible(menuVisible === item.promotionId ? null : item.promotionId)}
+                    >
+                      <Icon name="dots-vertical" size={20} color="#666" />
+                    </TouchableOpacity>
+                    
+                    {menuVisible === item.promotionId && (
+                      <>
+                        <TouchableOpacity 
+                          style={styles.menuOverlay}
+                          onPress={() => setMenuVisible(null)}
+                        />
+                        <View style={styles.menuDropdown}>
+                          <TouchableOpacity 
+                            style={styles.menuItem}
+                            onPress={() => {
+                              setMenuVisible(null);
+                              openEditPromotion(item);
+                            }}
+                          >
+                            <Icon name="pencil" size={16} color="#009DA5" />
+                            <Text style={styles.menuItemText}>Sửa</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            style={styles.menuItem}
+                            onPress={() => {
+                              setMenuVisible(null);
+                              Alert.alert(
+                                'Xác nhận xóa',
+                                `Bạn có chắc chắn muốn xóa khuyến mãi "${item.name}"?`,
+                                [
+                                  { text: 'Hủy', style: 'cancel' },
+                                  { 
+                                    text: 'Xóa', 
+                                    style: 'destructive',
+                                    onPress: () => deletePromotion(item.promotionId)
+                                  }
+                                ]
+                              );
+                            }}
+                          >
+                            <Icon name="delete" size={16} color="#E53935" />
+                            <Text style={[styles.menuItemText, { color: '#E53935' }]}>Xóa</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    )}
+                  </View>
                 );
               }}
               ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
@@ -453,6 +591,154 @@ const PromotionScreen = () => {
         </View>
       </Modal>
 
+      {/* Edit Modal */}
+      <Modal
+        visible={isEditOpen}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setIsEditOpen(false)}
+      >
+        <View style={styles.createOverlay}>
+          <View style={styles.createCard}>
+            <View style={styles.createHeader}>
+              <Text style={styles.createTitle}>Sửa khuyến mãi</Text>
+              <TouchableOpacity onPress={() => setIsEditOpen(false)} style={styles.createCloseBtn}>
+                <Icon name="close" size={20} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'height' : 'padding'}>
+              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 12 }}>
+                <View style={styles.card}>
+            <Text style={styles.label}>Tên chương trình <Text style={styles.required}>*</Text></Text>
+            <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Ví dụ: Giảm giá hè" />
+
+            <View style={styles.row}>
+              <View style={styles.half}> 
+                <Text style={styles.label}>Ngày bắt đầu (YYYY-MM-DD) <Text style={styles.required}>*</Text></Text>
+                <TextInput style={styles.input} value={startDate} onChangeText={setStartDate} placeholder="2025-01-01" />
+              </View>
+              <View style={styles.half}>
+                <Text style={styles.label}>Ngày kết thúc (YYYY-MM-DD) <Text style={styles.required}>*</Text></Text>
+                <TextInput style={styles.input} value={endDate} onChangeText={setEndDate} placeholder="2025-01-31" />
+              </View>
+            </View>
+
+            <View style={styles.row}>
+              <View style={styles.half}> 
+                <Text style={styles.label}>Giờ bắt đầu</Text>
+                <TextInput style={styles.input} value={startTime} onChangeText={setStartTime} placeholder="08:00" />
+              </View>
+              <View style={styles.half}>
+                <Text style={styles.label}>Giờ kết thúc</Text>
+                <TextInput style={styles.input} value={endTime} onChangeText={setEndTime} placeholder="21:00" />
+              </View>
+            </View>
+
+            <View style={styles.row}>
+              <View style={styles.half}> 
+                <Text style={styles.label}>Loại khuyến mãi <Text style={styles.required}>*</Text></Text>
+                <View style={styles.segmentRow}>
+                  <TouchableOpacity
+                    style={[styles.segment, type === 1 && styles.segmentActive]}
+                    onPress={() => setType(1)}
+                  >
+                    <Text style={[styles.segmentText, type === 1 && styles.segmentTextActive]}>Giảm số tiền</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.segment, type === 2 && styles.segmentActive]}
+                    onPress={() => setType(2)}
+                  >
+                    <Text style={[styles.segmentText, type === 2 && styles.segmentTextActive]}>Giảm %</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            <Text style={styles.label}>Giá trị <Text style={styles.required}>*</Text> {type === 2 ? '(%)' : '(VND)'}</Text>
+            <TextInput
+              style={styles.input}
+              value={value}
+              onChangeText={(t) => setValue(t.replace(/[^\d.]/g, ''))}
+              keyboardType="numeric"
+              placeholder={type === 2 ? 'Nhập % (1-100)' : 'Nhập số tiền'}
+            />
+
+            <Text style={styles.label}>Sản phẩm áp dụng <Text style={styles.required}>*</Text></Text>
+            <TouchableOpacity style={styles.dropdownInput} onPress={() => setIsProductModalOpen(true)}>
+              <Text style={styles.dropdownText}>
+                {selectedProductIds.length > 0
+                  ? `${selectedProductIds.length} sản phẩm đã chọn`
+                  : 'Chọn sản phẩm'}
+              </Text>
+              <Icon name="chevron-down" size={20} color="#666" />
+            </TouchableOpacity>
+
+            <Modal visible={isProductModalOpen} transparent animationType="fade" onRequestClose={() => setIsProductModalOpen(false)}>
+              <View style={styles.modalOverlay}> 
+                <View style={styles.modalCard}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>Chọn sản phẩm</Text>
+                    <TouchableOpacity onPress={() => setIsProductModalOpen(false)}>
+                      <Icon name="close" size={22} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                   {/* Category filter chips */}
+                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catChips}>
+                     {['Tất cả', ...categories.map(c => c.categoryName)].map((cat) => (
+                       <TouchableOpacity key={cat} style={[styles.catChip, selectedCategory === cat && styles.catChipActive]} onPress={() => setSelectedCategory(cat)}>
+                         <Text style={[styles.catChipText, selectedCategory === cat && styles.catChipTextActive]}>{cat}</Text>
+                       </TouchableOpacity>
+                     ))}
+                   </ScrollView>
+
+                  {/* Search row with Select All */}
+                  <View style={styles.modalSearchRow}>
+                    <View style={[styles.searchContainer, { flex: 1, marginLeft: 8 }] }>
+                      <Icon name="magnify" size={18} color="#666" />
+                      <TextInput
+                        style={[styles.searchInput, { paddingVertical: 8 }]}
+                        placeholder="Tìm sản phẩm..."
+                        value={productSearch}
+                        onChangeText={setProductSearch}
+                      />
+                    </View>
+                    <TouchableOpacity style={styles.selectAllBtn} onPress={handleSelectAllInView}>
+                      <Icon name={allSelectedInView ? 'check-all' : 'select-all'} size={18} color="#FFF" />
+                      <Text style={styles.selectAllText}>{allSelectedInView ? 'Bỏ chọn' : 'Chọn tất cả'}</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                   <ScrollView style={{ maxHeight: 360 }}>
+                     {filteredProducts.map((p) => {
+                      const checked = selectedProductIds.includes(p.id);
+                      return (
+                        <TouchableOpacity key={p.id} style={styles.optionRow} onPress={() => {
+                          setSelectedProductIds((prev) => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]);
+                        }}>
+                          <Text style={styles.optionText}>{p.name}</Text>
+                          {checked ? <Icon name="checkbox-marked" size={20} color="#009DA5" /> : <Icon name="checkbox-blank-outline" size={20} color="#999" />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                  <TouchableOpacity style={styles.modalPrimaryBtn} onPress={() => setIsProductModalOpen(false)}>
+                    <Text style={styles.modalPrimaryText}>Xong</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
+
+                  <TouchableOpacity style={[styles.submitBtn, isSubmitting && { opacity: 0.7 }]} onPress={submit} disabled={isSubmitting}>
+                    <Text style={styles.submitText}>{isSubmitting ? 'Đang lưu...' : 'Cập nhật khuyến mãi'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </View>
+        </View>
+      </Modal>
+
       {/* Products of promotion modal */}
       <Modal visible={productsModalOpen} transparent animationType="fade" onRequestClose={() => setProductsModalOpen(false)}>
         <View style={styles.modalOverlay}>
@@ -567,11 +853,78 @@ const styles = StyleSheet.create({
   modalSearchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 8, marginBottom: 8 },
   selectAllBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#009DA5', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8 },
   selectAllText: { color: '#FFF', fontWeight: '700', marginLeft: 6, fontSize: 12 },
-  promoItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E5E5E5' },
+  promoItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#FFFFFF', 
+    padding: 12, 
+    borderRadius: 8, 
+    borderWidth: 1, 
+    borderColor: '#E5E5E5',
+    position: 'relative',
+  },
   promoName: { fontSize: 14, fontWeight: '700', color: '#000' },
   promoMeta: { fontSize: 12, color: '#666', marginTop: 4 },
-  promoBadge: { backgroundColor: '#009DA5', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14 },
-  promoBadgeText: { color: '#FFF', fontWeight: '700' },
+  promoBadge: { 
+    backgroundColor: '#009DA5', 
+    width: 50,
+    height: 50,
+    borderRadius: 35,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 12,
+  },
+  promoBadgeText: { 
+    color: '#FFF', 
+    fontWeight: '700', 
+    fontSize: 12,
+  },
+  menuBtn: { 
+    padding: 8, 
+    marginLeft: 8,
+    borderRadius: 6, 
+    backgroundColor: '#F5F5F5', 
+    borderWidth: 1, 
+    borderColor: '#E5E5E5',
+  },
+  menuDropdown: {
+    position: 'absolute',
+    right: 0,
+    top: 40,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 1000,
+    minWidth: 120,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  menuItemText: {
+    fontSize: 14,
+    color: '#333',
+    marginLeft: 8,
+    fontWeight: '500',
+  },
+  menuOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 999,
+  },
 });
 
 export default PromotionScreen;
