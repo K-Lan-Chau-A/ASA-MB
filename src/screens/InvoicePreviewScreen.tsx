@@ -29,6 +29,10 @@ interface InvoiceData {
   totalAmount: number;
   products: Product[];
   discount: number;
+  // Optional customer info
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
 }
 
 const InvoicePreviewScreen = () => {
@@ -36,6 +40,10 @@ const InvoicePreviewScreen = () => {
   const route = useRoute<RouteProp<RootStackParamList, 'InvoicePreview'>>();
 
   const { invoiceData } = route.params;
+  // Customer info can come from invoiceData or separate param (fallbacks)
+  const customerName = (invoiceData as any)?.customerName || (route.params as any)?.customer?.fullName || 'Khách lẻ';
+  const customerPhone = (invoiceData as any)?.customerPhone || (route.params as any)?.customer?.phone || '';
+  const customerEmail = (invoiceData as any)?.customerEmail || (route.params as any)?.customer?.email || '';
   const [copyCount, setCopyCount] = useState(1);
 
   const formatCurrency = (amount: number) => {
@@ -155,9 +163,9 @@ const InvoicePreviewScreen = () => {
 
           {/* Customer Information */}
           <View style={styles.customerInfo}>
-            <Text style={styles.customerLabel}>Khách hàng: Khách lẻ</Text>
-            <Text style={styles.customerField}>SDT:</Text>
-            <Text style={styles.customerField}>Địa chỉ:</Text>
+            <Text style={styles.customerLabel}>Khách hàng: {customerName}</Text>
+            <Text style={styles.customerField}>SDT: {customerPhone}</Text>
+            <Text style={styles.customerField}>Email: {customerEmail}</Text>
           </View>
 
           {/* Divider */}

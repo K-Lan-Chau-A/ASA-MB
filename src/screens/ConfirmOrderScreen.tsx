@@ -48,6 +48,7 @@ const ConfirmOrderScreen = () => {
   
   const { products, totalAmount: originalTotal } = route.params;
   const selectedCustomerId = (route.params as any)?.customerId ?? (route.params as any)?.customer?.id ?? null;
+  const [customerInfo, setCustomerInfo] = useState<{ id: number; fullName?: string; phone?: string; email?: string } | null>((route.params as any)?.customer ?? null);
   
   // Discount states
   const [promoCode, setPromoCode] = useState('');
@@ -101,6 +102,31 @@ const ConfirmOrderScreen = () => {
     };
     loadVouchers();
   }, []);
+
+  // Ensure we have fresh customer info if only ID is provided
+  useEffect(() => {
+    const run = async () => {
+      try {
+        if (!customerInfo && selectedCustomerId && selectedCustomerId > 0) {
+          const shopId = (await getShopId()) ?? 0;
+          const token = await getAuthToken();
+          const res = await fetch(`${API_URL}/api/customers/${selectedCustomerId}?ShopId=${shopId}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
+          const data = await res.json().catch(() => ({}));
+          const c: any = data?.data || data || {};
+          const idNum = Number(c?.customerId ?? c?.id ?? selectedCustomerId);
+          setCustomerInfo({
+            id: idNum,
+            fullName: String(c?.fullName ?? ''),
+            phone: c?.phone ? String(c.phone) : undefined,
+            email: c?.email ? String(c.email) : undefined,
+          });
+        }
+      } catch {}
+    };
+    run();
+  }, [selectedCustomerId, customerInfo]);
 
   const calculateDiscount = useCallback(() => {
     if (!discountPercentage) return 0;
@@ -395,9 +421,12 @@ const ConfirmOrderScreen = () => {
     // Navigate to InvoicePreview screen with invoice data
     navigation.navigate('InvoicePreview', {
       invoiceData: {
-        ...invoiceData,
-        discount: appliedDiscount
-      }
+        ...(invoiceData as any),
+        discount: appliedDiscount,
+        customerName: customerInfo?.fullName,
+        customerPhone: customerInfo?.phone,
+        customerEmail: customerInfo?.email,
+      } as any
     });
   };
 
@@ -564,6 +593,32 @@ const ConfirmOrderScreen = () => {
               </View>
             </View>
           ))}
+        </View>
+
+        {/* Customer Info */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Khách hàng</Text>
+          <View style={styles.customerRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.customerName}>{customerInfo?.fullName || 'Khách lẻ'}</Text>
+              {!!(customerInfo?.phone || customerInfo?.email) && (
+                <View style={styles.customerMetaRow}>
+                  {!!customerInfo?.phone && (
+                    <View style={styles.customerMetaItem}>
+                      <Icon name="phone" size={14} color="#666" />
+                      <Text style={styles.customerMetaText}>{customerInfo.phone}</Text>
+                    </View>
+                  )}
+                  {!!customerInfo?.email && (
+                    <View style={styles.customerMetaItem}>
+                      <Icon name="email" size={14} color="#666" />
+                      <Text style={styles.customerMetaText}>{customerInfo.email}</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          </View>
         </View>
 
         {/* Total Amount */}
@@ -960,6 +1015,11 @@ const styles = StyleSheet.create({
     color: '#000',
     marginBottom: 16,
   },
+  customerRow: { flexDirection: 'row', alignItems: 'center' },
+  customerName: { fontSize: 16, color: '#000', fontWeight: '600' },
+  customerMetaRow: { flexDirection: 'row', gap: 12, marginTop: 6 },
+  customerMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  customerMetaText: { fontSize: 12, color: '#666' },
   productItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',

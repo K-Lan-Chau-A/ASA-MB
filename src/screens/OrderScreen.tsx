@@ -309,21 +309,66 @@ const OrderScreen = () => {
   useEffect(() => {
     if (route.params?.scannedProduct) {
       const { barcode, type } = route.params.scannedProduct;
-      // Find product by barcode and add to order
-      const foundProduct = availableProducts.find(p => p.barcode === barcode);
-      if (foundProduct) {
-        // Create a complete product object with units
-        const productToAdd = {
-          ...foundProduct,
-          price: foundProduct.units[0].price,
-          selectedUnit: foundProduct.units[0].unitName,
-        } as Product;
-        addProduct(productToAdd);
-      } else {
-        // Product not found, automatically navigate to create new product
-        console.log('📱 Product not found, navigating to AddProduct screen:', barcode);
-        navigation.navigate('AddProduct', { barcode });
-      }
+      // Prefer fetching from API by barcode for selling flow
+      const run = async () => {
+        try {
+          const shopId = (await getShopId()) ?? 0;
+          const token = await getAuthToken();
+          // First try local suggestions list for performance
+          const local = availableProducts.find(p => p.barcode === barcode);
+          let candidate: any | null = local || null;
+          if (!candidate) {
+            const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&Barcode=${encodeURIComponent(barcode)}&page=1&pageSize=1`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            const data = await res.json().catch(() => ({}));
+            const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+            const p: any = items[0];
+            if (p) {
+              candidate = {
+                id: String(p.id ?? p.productId ?? ''),
+                name: String(p.productName ?? p.name ?? 'Sản phẩm'),
+                price: Number(p.price ?? 0),
+                barcode: p.barcode ? String(p.barcode) : undefined,
+                imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
+                units: [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true }],
+                selectedUnit: 'Cái',
+              } as AvailableProduct;
+            }
+          }
+          if (candidate) {
+            // Enrich units from product-units API
+            try {
+              const uRes = await fetch(`${API_URL}/api/product-units?ShopId=${shopId}&ProductId=${candidate.id}&page=1&pageSize=50`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+              });
+              const uData = await uRes.json().catch(() => ({}));
+              const arr: any[] = Array.isArray(uData?.items) ? uData.items : [];
+              if (arr.length > 0) {
+                const units = arr.map((u: any) => ({
+                  unitName: String(u.unitName ?? u.name ?? 'Cái'),
+                  price: Number(u.price ?? candidate.price ?? 0),
+                  quantityInBaseUnit: Number(u.conversionFactor ?? 1),
+                  isBaseUnit: Number(u.conversionFactor ?? 1) === 1,
+                })).sort((a: any, b: any) => (a.quantityInBaseUnit || 1) - (b.quantityInBaseUnit || 1));
+                const base = units.find((u: any) => u.isBaseUnit) || units[0];
+                candidate = { ...candidate, units, price: base.price, selectedUnit: base.unitName };
+              }
+            } catch {}
+
+            const productToAdd = candidate as Product;
+            addProduct(productToAdd);
+          } else {
+            // Fallback: show not found alert and ask user to enter product manually
+            console.log('📱 Product not found by barcode:', barcode);
+            Alert.alert('Không tìm thấy', `Không tìm thấy sản phẩm với mã vạch ${barcode}.\nHãy nhập sản phẩm trong mục Hàng hóa.`);
+          }
+        } catch (e) {
+          console.log('📱 Scan handling error', e);
+          Alert.alert('Lỗi', 'Không thể tìm sản phẩm theo mã vạch. Hãy thử lại hoặc nhập sản phẩm.');
+        }
+      };
+      run();
       
       // Clear the scannedProduct and scanTimestamp params to prevent re-processing
       navigation.setParams({ scannedProduct: undefined, scanTimestamp: undefined });
@@ -447,12 +492,34 @@ const OrderScreen = () => {
       return;
     }
     
-    // Navigate to ConfirmOrderScreen with order data
-    navigation.navigate('ConfirmOrder', {
-      products: products,
-      totalAmount: totalAmount,
-      customerId: route.params?.customer?.id ?? null,
-    });
+    // Try to enrich customer details from API before navigating
+    const run = async () => {
+      let customerPayload: any = undefined;
+      const customerId = route.params?.customer?.id ?? null;
+      try {
+        if (customerId && customerId > 0) {
+          const shopId = (await getShopId()) ?? 0;
+          const token = await getAuthToken();
+          const res = await fetch(`${API_URL}/api/customers/${customerId}?ShopId=${shopId}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
+          const data = await res.json().catch(() => ({}));
+          const c: any = data?.data || data || {};
+          const idNum = Number(c?.customerId ?? c?.id ?? customerId);
+          const fullName = String(c?.fullName ?? route.params?.customer?.fullName ?? '');
+          const phone = c?.phone ? String(c.phone) : (route.params?.customer?.phone || undefined);
+          const email = c?.email ? String(c.email) : (route.params?.customer?.email || undefined);
+          customerPayload = { id: idNum, fullName, phone, email };
+        }
+      } catch {}
+      
+      navigation.navigate('ConfirmOrder', {
+        products: products,
+        totalAmount: totalAmount,
+        customerId: customerPayload?.id ?? customerId ?? null,
+      });
+    };
+    run();
   };
 
   const filteredProducts = useMemo(() => {

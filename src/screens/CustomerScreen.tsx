@@ -101,7 +101,16 @@ const CustomerScreen = () => {
           // Pass selected customer back to Order screen
           if (item.id && item.id > 0) {
             navigation.navigate('Order', {
-              customer: { id: item.id, fullName: item.fullName, phone: item.phone, email: item.email },
+              customer: {
+                id: item.id,
+                fullName: item.fullName,
+                phone: item.phone,
+                email: item.email,
+                // Also include fields used by InvoicePreview
+                customerName: item.fullName,
+                customerPhone: item.phone,
+                customerEmail: item.email,
+              } as any,
             });
           } else {
             navigation.navigate('Order', { customer: undefined });
