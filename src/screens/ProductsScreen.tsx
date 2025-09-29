@@ -257,6 +257,11 @@ const ProductsScreen = () => {
       const token = await getAuthToken();
       const cacheKey = `products:${shopId}:v2`;
 
+      // If force refresh requested, invalidate cache upfront
+      if (force && shopId > 0) {
+        try { await AsyncStorage.removeItem(cacheKey); } catch {}
+      }
+
       // Try cache first if not force
       if (!force && shopId > 0) {
         try {
@@ -316,14 +321,21 @@ const ProductsScreen = () => {
               const uData = await uRes.json();
               const arr: any[] = Array.isArray(uData?.items) ? uData.items : [];
               if (arr.length > 0) {
-                const units = arr.map((u: any) => ({
+                let units = arr.map((u: any) => ({
                   unitName: String(u.unitName ?? u.name ?? 'Cái'),
                   price: Number(u.price ?? prod.price ?? 0),
                   quantityInBaseUnit: Number(u.conversionFactor ?? 1),
                   isBaseUnit: Number(u.conversionFactor ?? 1) === 1,
                 })).sort((a: any, b: any) => (a.quantityInBaseUnit || 1) - (b.quantityInBaseUnit || 1));
-                const base = units.find((u: any) => u.isBaseUnit) || units[0];
-                return { ...prod, units, price: base.price, selectedUnit: base.unitName };
+                const baseIdx = units.findIndex((u: any) => u.isBaseUnit);
+                const base = baseIdx >= 0 ? units[baseIdx] : units[0];
+                // Trust products API price as the source of truth for base unit.
+                // If it differs from units API, override base unit price to keep UI consistent.
+                if (typeof prod.price === 'number' && prod.price > 0) {
+                  units = units.map((u: any, idx: number) => idx === (baseIdx >= 0 ? baseIdx : 0) ? { ...u, price: prod.price } : u);
+                }
+                const finalBase = baseIdx >= 0 ? units[baseIdx] : units[0];
+                return { ...prod, units, price: finalBase.price, selectedUnit: finalBase.unitName };
               }
             } catch {}
             // fallback keep original price and selectedUnit
@@ -335,7 +347,7 @@ const ProductsScreen = () => {
 
       setProducts(mapped);
 
-      // Save cache
+      // Save fresh cache (overwrite any previous data)
       try {
         if (shopId > 0) {
           const cachePayload = JSON.stringify({ ts: Date.now(), items: mapped });

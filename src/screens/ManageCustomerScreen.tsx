@@ -128,7 +128,7 @@ const ManageCustomerScreen = () => {
   const renderItem = ({ item }: { item: AccountItem }) => {
     const borderColor = getRankColor(item.rankid);
     return (
-      <View style={[styles.row, { borderColor }]}>
+      <View style={styles.row}> 
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <Text style={styles.name}>{item.fullName}</Text>

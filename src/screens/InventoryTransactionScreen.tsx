@@ -33,6 +33,8 @@ const InventoryTransactionScreen = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [imageViewerVisible, setImageViewerVisible] = useState(false);
   const [imageViewerUri, setImageViewerUri] = useState<string | undefined>(undefined);
+  // 0: all, 1: sell, 2: import
+  const [filterType, setFilterType] = useState<0 | 1 | 2>(0);
 
   const load = useCallback(async (nextPage?: number, isRefreshing?: boolean) => {
     try {
@@ -47,7 +49,8 @@ const InventoryTransactionScreen = () => {
       const shopId = (await getShopId()) ?? 0;
       const token = await getAuthToken();
       // Load transactions
-      const tRes = await fetch(`${API_URL}/api/inventory-transactions?ShopId=${shopId}&page=${targetPage}&pageSize=${pageSize}` , {
+      const typeQuery = filterType ? `&Type=${filterType}` : '';
+      const tRes = await fetch(`${API_URL}/api/inventory-transactions?ShopId=${shopId}${typeQuery}&page=${targetPage}&pageSize=${pageSize}` , {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       const tData = await tRes.json().catch(() => ({}));
@@ -125,9 +128,9 @@ const InventoryTransactionScreen = () => {
       setLoadingMore(false);
       setRefreshing(false);
     }
-  }, [pageSize]);
+  }, [pageSize, filterType]);
 
-  useEffect(() => { load(1, true); }, []);
+  useEffect(() => { load(1, true); }, [load]);
 
   const onRefresh = useCallback(() => {
     setProductNameById({});
@@ -189,6 +192,27 @@ const InventoryTransactionScreen = () => {
       </View>
 
       <View style={{ flex: 1, padding: 16 }}>
+        {/* Filter chips */}
+        <View style={styles.filterRow}>
+          <TouchableOpacity
+            style={[styles.chip, filterType === 0 && styles.chipActive]}
+            onPress={() => { setFilterType(0); setPage(1); load(1, true); }}
+          >
+            <Text style={[styles.chipText, filterType === 0 && styles.chipTextActive]}>Tất cả</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.chip, filterType === 1 && styles.chipActive]}
+            onPress={() => { setFilterType(1); setPage(1); load(1, true); }}
+          >
+            <Text style={[styles.chipText, filterType === 1 && styles.chipTextActive]}>Bán</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.chip, filterType === 2 && styles.chipActive]}
+            onPress={() => { setFilterType(2); setPage(1); load(1, true); }}
+          >
+            <Text style={[styles.chipText, filterType === 2 && styles.chipTextActive]}>Nhập</Text>
+          </TouchableOpacity>
+        </View>
         {loading ? (
           <View style={{ paddingVertical: 20, alignItems: 'center' }}>
             <ActivityIndicator size="small" color="#009DA5" />
@@ -248,6 +272,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#EEE' },
   headerTitle: { fontSize: 16, fontWeight: 'bold', color: '#000' },
+  filterRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: '#F5F5F5', borderWidth: 1, borderColor: '#E5E5E5' },
+  chipActive: { backgroundColor: '#009DA5', borderColor: '#009DA5' },
+  chipText: { fontSize: 12, color: '#666', fontWeight: '600' },
+  chipTextActive: { color: '#FFFFFF' },
   row: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FAFAFA', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E5E5E5' },
   leftIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F0F0F0', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   title: { fontSize: 14, color: '#000', fontWeight: '600' },

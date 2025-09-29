@@ -96,7 +96,7 @@ const CustomerScreen = () => {
     const genderText = typeof item.gender === 'number' ? (item.gender === 1 ? 'Nam' : 'Nữ') : undefined;
     return (
       <TouchableOpacity
-        style={[styles.row, { borderColor }] }
+        style={styles.row}
         onPress={() => {
           // Pass selected customer back to Order screen
           if (item.id && item.id > 0) {

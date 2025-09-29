@@ -55,7 +55,7 @@ const AddProductScreen = () => {
   const [product, setProduct] = useState<NewProduct>({
     barcode: route.params?.product?.barcode || route.params?.barcode || '',
     name: route.params?.product?.name || '',
-    category: route.params?.product?.category || '',
+    category: route.params?.product?.categoryName || route.params?.product?.category || '',
     importPrice: route.params?.product?.cost != null && !isNaN(Number(route.params?.product?.cost))
       ? Number(route.params?.product?.cost).toLocaleString('vi-VN')
       : '',
