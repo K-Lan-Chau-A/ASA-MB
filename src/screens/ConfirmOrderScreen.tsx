@@ -71,6 +71,7 @@ const ConfirmOrderScreen = () => {
   type Voucher = { voucherId: number; code: string; type: number; value: number; expired: string };
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [loadingVouchers, setLoadingVouchers] = useState(false);
+  const [selectedVoucherId, setSelectedVoucherId] = useState<number | null>(null);
 
   useEffect(() => {
     const loadVouchers = async () => {
@@ -213,10 +214,15 @@ const ConfirmOrderScreen = () => {
 
       const payload: any = {
         paymentMethod: mapPaymentMethodToCode(selectedPaymentMethod),
-        status: selectedPaymentMethod === 'cash' ? 1 : 0,
+        // Mark order as successful (1) upon creation; payment flow handled client-side
+        status: 1,
         shiftId: shiftId,
         shopId: shopId,
-        discount: appliedDiscount > 0 ? Number(appliedDiscount) : null,
+        // Explicitly send final totals to backend for correct aggregation
+        totalPrice: Math.max(0, Math.round(finalTotal)),
+        amountPaid: Math.max(0, Math.round(finalTotal)),
+        // If voucher selected, send voucherId and no direct discount; else send discount amount
+        ...(selectedVoucherId ? { voucherId: selectedVoucherId, discount: 0 } : { discount: appliedDiscount > 0 ? Number(appliedDiscount) : 0 }),
         note: (promoCode || discountReason) ? [promoCode ? `Mã: ${promoCode}` : '', discountReason ? `Lý do: ${discountReason}` : ''].filter(Boolean).join(' | ') : null,
         orderDetails,
         ...(selectedCustomerId ? { customerId: Number(selectedCustomerId) } : {}),
@@ -301,6 +307,7 @@ const ConfirmOrderScreen = () => {
   const applyVoucher = (v: Voucher) => {
     if (!v) return;
     setPromoCode(v.code);
+    setSelectedVoucherId(Number(v.voucherId || 0) || null);
     if (v.type === 2) {
       const pct = Number(v.value || 0);
       const discount = Math.min((originalTotal * pct) / 100, originalTotal);
@@ -338,6 +345,7 @@ const ConfirmOrderScreen = () => {
     setPromoCode('');
     setDiscountPercentage('');
     setDiscountReason('');
+    setSelectedVoucherId(null);
   };
 
   const handlePayment = () => {
@@ -467,12 +475,16 @@ const ConfirmOrderScreen = () => {
       const dt = new Date(createdAtStr);
       const date = dt.toLocaleDateString('vi-VN', { day: 'numeric', month: 'long', year: 'numeric' });
       const time = dt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
+      // Prefer local finalTotal when có giảm giá, vì backend có thể chưa phản ánh ngay
+      const resolvedTotal = appliedDiscount > 0
+        ? finalTotal
+        : Number(createdOrder.totalPrice ?? finalTotal);
       return {
         invoiceNumber: `#${createdOrder.orderId}`,
         date,
         time,
         paymentMethod: getPaymentMethodName(selectedPaymentMethod),
-        totalAmount: Number(createdOrder.totalPrice ?? finalTotal),
+        totalAmount: resolvedTotal,
         products: products,
       };
     }
@@ -495,7 +507,8 @@ const ConfirmOrderScreen = () => {
   // Speak when success modal is shown
   useEffect(() => {
     if (showSuccessModal) {
-      const amountNumber = Number(invoiceData?.totalAmount ?? finalTotal) || 0;
+      // Always use latest computed total including discount
+      const amountNumber = Number((invoiceData && invoiceData.totalAmount) ? invoiceData.totalAmount : finalTotal) || 0;
       const text = `Thanh toán thành công ${amountNumber.toLocaleString('vi-VN')} đồng`;
       (async () => {
         try {

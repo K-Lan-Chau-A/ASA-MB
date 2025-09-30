@@ -53,7 +53,8 @@ const AddProductScreen = () => {
   const editingId = (route.params as any)?.product?.id ? String((route.params as any).product.id) : '';
   
   const [product, setProduct] = useState<NewProduct>({
-    barcode: route.params?.product?.barcode || route.params?.barcode || '',
+    // Đừng lấy barcode từ params để tránh reset state khi quét mã và quay lại
+    barcode: route.params?.product?.barcode || '',
     name: route.params?.product?.name || '',
     category: route.params?.product?.categoryName || route.params?.product?.category || '',
     importPrice: route.params?.product?.cost != null && !isNaN(Number(route.params?.product?.cost))
@@ -88,6 +89,14 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
   const [invoiceImage, setInvoiceImage] = useState('');
   const [isProductImageUploading, setIsProductImageUploading] = useState(false);
   const [isInvoiceImageUploading, setIsInvoiceImageUploading] = useState(false);
+
+  // Khi nhận barcode từ màn quét, chỉ cập nhật trường barcode, giữ nguyên các trường khác
+  useEffect(() => {
+    const scanned = route.params?.barcode;
+    if (typeof scanned === 'string' && scanned.trim()) {
+      setProduct(prev => ({ ...prev, barcode: scanned.trim() }));
+    }
+  }, [route.params?.barcode]);
 
   const updateProduct = useCallback((field: keyof NewProduct, value: string) => {
     setProduct(prev => ({ ...prev, [field]: value }));
@@ -287,15 +296,18 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         const data = await res.json().catch(() => ({}));
         const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
         const found: any = items[0];
-        if (!active || !found) return;
-        // Prefill fields, do not override if user already typed values
+        if (!active) return;
+        if (!found) {
+          // Không đụng vào dữ liệu người dùng đã nhập khi không tìm thấy sản phẩm
+          return;
+        }
+        // Prefill fields, không xoá dữ liệu người dùng đã nhập; chỉ fill khi field đang trống
         setProduct(prev => ({
           ...prev,
           name: prev.name || String(found.productName ?? found.name ?? ''),
           sellPrice: prev.sellPrice || (typeof found.price === 'number' ? String(found.price) : ''),
           discount: prev.discount || (typeof found.discount === 'number' ? String(found.discount) : prev.discount),
           image: prev.image || (found.productImageURL ? String(found.productImageURL) : (found.imageUrl ? String(found.imageUrl) : prev.image)),
-          // keep barcode, quantity untouched
         }));
         // Determine base and additional units from product-units API
         try {
@@ -317,16 +329,10 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
                   .map((u: any) => ({ unitName: String(u.unitName ?? ''), conversionRate: Number(u.conversionFactor ?? 0) || 0, unitPrice: typeof u.price === 'number' ? String(u.price) : '' }));
                 setAdditionalUnits(others);
               }
-            } else if (!baseUnit) {
-              setBaseUnit('');
             }
-          } else if (!baseUnit) {
-            setBaseUnit('');
           }
-        } catch {
-          if (!baseUnit) setBaseUnit('');
-        }
-        // If category exists, set by categoryName
+        } catch {}
+        // If category exists, set by categoryName (không ghi đè nếu đã có)
         const catName: string | undefined = found.categoryName ? String(found.categoryName) : undefined;
         if (catName && !product.category) {
           updateProduct('category', catName);
@@ -459,26 +465,26 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
 
     // Validate price format
     const sellPrice = parseInt(product.sellPrice.replace(/[^\d]/g, ''));
-    const quantity = parseInt(product.quantity || '0', 10) || 0;
-    const totalImport = parseInt((inventoryTotalPrice || '').replace(/[^\d]/g, '')) || 0;
-    const unitImportPrice = quantity > 0 ? Math.round(totalImport / quantity) : 0;
+    const quantity = isEditing ? 0 : (parseInt(product.quantity || '0', 10) || 0);
+    const totalImport = isEditing ? 0 : (parseInt((inventoryTotalPrice || '').replace(/[^\d]/g, '')) || 0);
+    const unitImportPrice = isEditing ? 0 : (quantity > 0 ? Math.round(totalImport / quantity) : 0);
     
     if (isNaN(sellPrice) || sellPrice <= 0) {
       Alert.alert('Lỗi', 'Giá bán phải là số dương');
       return;
     }
 
-    if (quantity <= 0) {
+    if (!isEditing && quantity <= 0) {
       Alert.alert('Lỗi', 'Vui lòng nhập số lượng nhập (> 0)');
       return;
     }
 
-    if (totalImport <= 0) {
+    if (!isEditing && totalImport <= 0) {
       Alert.alert('Lỗi', 'Vui lòng nhập tổng tiền nhập hàng');
       return;
     }
 
-    if (unitImportPrice > sellPrice) {
+    if (!isEditing && unitImportPrice > sellPrice) {
       Alert.alert('Cảnh báo', 'Giá nhập cao hơn giá bán. Bạn có chắc chắn muốn tiếp tục?', [
         { text: 'Hủy', style: 'cancel' },
         { text: 'Tiếp tục', onPress: () => saveProduct(sellPrice, unitImportPrice, totalImport) }
@@ -794,16 +800,18 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
 
           {/* Prices Row */}
           <View style={styles.rowContainer}>
-            <View style={[styles.fieldContainer, styles.halfWidth]}>
-              <Text style={styles.label}>Tổng tiền nhập hàng<Text style={styles.requiredStar}>*</Text></Text>
-              <TextInput
-                style={styles.input}
-                value={inventoryTotalPrice}
-                onChangeText={(text) => setInventoryTotalPrice(formatPrice(text))}
-                placeholder="Nhập tổng tiền"
-                keyboardType="numeric"
-              />
-            </View>
+            {!isEditing && (
+              <View style={[styles.fieldContainer, styles.halfWidth]}>
+                <Text style={styles.label}>Tổng tiền nhập hàng<Text style={styles.requiredStar}>*</Text></Text>
+                <TextInput
+                  style={styles.input}
+                  value={inventoryTotalPrice}
+                  onChangeText={(text) => setInventoryTotalPrice(formatPrice(text))}
+                  placeholder="Nhập tổng tiền"
+                  keyboardType="numeric"
+                />
+              </View>
+            )}
 
             <View style={[styles.fieldContainer, styles.halfWidth]}>
               <Text style={styles.label}>Giá bán <Text style={styles.requiredStar}>*</Text></Text>
@@ -818,15 +826,17 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
           </View>
 
           {/* Computed Import Price */}
-          <View style={styles.fieldContainer}>
-            <Text style={styles.label}>Giá vốn/đơn vị (tự tính)</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: '#EFEFEF' }]}
-              value={product.importPrice}
-              editable={false}
-              placeholder="Tự tính từ Số lượng và Tổng tiền"
-            />
-          </View>
+          {!isEditing && (
+            <View style={styles.fieldContainer}>
+              <Text style={styles.label}>Giá vốn/đơn vị (tự tính)</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: '#EFEFEF' }]}
+                value={product.importPrice}
+                editable={false}
+                placeholder="Tự tính từ Số lượng và Tổng tiền"
+              />
+            </View>
+          )}
 
           {/* Base Unit and Additional Units */}
           <View style={styles.rowContainer}>
@@ -899,34 +909,36 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
           </View>
 
           {/* Quantity and Discount */}
-          <View style={styles.rowContainer}>
-            <View style={[styles.fieldContainer, styles.halfWidth]}>
-              <Text style={styles.label}>Số lượng <Text style={styles.requiredStar}>*</Text></Text>
-              <TextInput
-                style={styles.input}
-                value={product.quantity}
-                onChangeText={(text) => updateProduct('quantity', text)}
-                placeholder="Số lượng"
-                keyboardType="numeric"
-              />
-            </View>
+          {!isEditing && (
+            <View style={styles.rowContainer}>
+              <View style={[styles.fieldContainer, styles.halfWidth]}>
+                <Text style={styles.label}>Số lượng <Text style={styles.requiredStar}>*</Text></Text>
+                <TextInput
+                  style={styles.input}
+                  value={product.quantity}
+                  onChangeText={(text) => updateProduct('quantity', text)}
+                  placeholder="Số lượng"
+                  keyboardType="numeric"
+                />
+              </View>
 
-            <View style={[styles.fieldContainer, styles.halfWidth]}>
-              <Text style={styles.label}>Giảm giá</Text>
-              <TextInput
-                style={styles.input}
-                value={product.discount}
-                onChangeText={(text) => {
-                  const value = parseInt(text) || 0;
-                  if (value >= 0 && value <= 100) {
-                    updateProduct('discount', value.toString());
-                  }
-                }}
-                placeholder="0"
-                keyboardType="numeric"
-              />
+              <View style={[styles.fieldContainer, styles.halfWidth]}>
+                <Text style={styles.label}>Giảm giá</Text>
+                <TextInput
+                  style={styles.input}
+                  value={product.discount}
+                  onChangeText={(text) => {
+                    const value = parseInt(text) || 0;
+                    if (value >= 0 && value <= 100) {
+                      updateProduct('discount', value.toString());
+                    }
+                  }}
+                  placeholder="0"
+                  keyboardType="numeric"
+                />
+              </View>
             </View>
-          </View>
+          )}
 
           {/* Invoice Image */}
           {!isEditing && (

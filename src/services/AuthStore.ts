@@ -69,6 +69,16 @@ export const setShiftId = async (shiftId: number): Promise<void> => {
   await authStore.save(updated);
 };
 
+// Clear persisted shift id (force open-shift on next operations)
+export const clearShiftId = async (): Promise<void> => {
+  const d = await authStore.load();
+  const updated: any = { ...(d ?? {}) };
+  if (Object.prototype.hasOwnProperty.call(updated, 'shiftId')) {
+    delete updated.shiftId;
+  }
+  await authStore.save(updated as AuthData);
+};
+
 
 // Fetch current open shift (closedDate is null) and persist its shiftId
 export const refreshOpenShiftId = async (): Promise<number | null> => {

@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types/navigation';
 import API_URL from '../config/api';
-import { getAuthToken, getShiftId, refreshOpenShiftId } from '../services/AuthStore';
+import { getAuthToken, getShiftId, refreshOpenShiftId, clearShiftId } from '../services/AuthStore';
 
 interface MenuItem {
   id: number;
@@ -35,13 +35,15 @@ const MoreScreen = () => {
         return;
       }
       const token = await getAuthToken();
+      const payload = { shiftId };
+      try { console.log('[CloseShift] payload:', payload); } catch {}
       const res = await fetch(`${API_URL}/api/shifts/close-shift`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ shiftId }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -50,6 +52,8 @@ const MoreScreen = () => {
         return;
       }
       Alert.alert('Thành công', 'Đã đóng ca.');
+      // Clear shiftId so app requires opening a new shift next time
+      try { await clearShiftId(); console.log('[CloseShift] cleared local shiftId'); } catch {}
       setCloseModalVisible(false);
     } catch (e) {
       Alert.alert('Lỗi', 'Không thể kết nối máy chủ. Vui lòng thử lại.');

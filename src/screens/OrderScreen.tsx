@@ -517,6 +517,8 @@ const OrderScreen = () => {
         products: products,
         totalAmount: totalAmount,
         customerId: customerPayload?.id ?? customerId ?? null,
+        // Pass full customer info when available so Confirm screen can render ngay lập tức
+        ...(customerPayload ? { customer: customerPayload } : {}),
       });
     };
     run();

@@ -9,9 +9,11 @@ import { RootStackParamList } from '../types/navigation';
 
 const PromotionScreen = () => {
   const [name, setName] = useState('');
-  const [startDate, setStartDate] = useState(''); // YYYY-MM-DD
-  const [endDate, setEndDate] = useState(''); // YYYY-MM-DD
-  const [startTime, setStartTime] = useState(''); // HH:mm or custom
+  // UI nhập theo dd/MM/yyyy. Khi submit sẽ convert sang yyyy-MM-dd
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  // Giờ nhập định dạng HH:mm; sẽ tự chèn ':' khi người dùng gõ
+  const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [type, setType] = useState<1 | 2>(1); // 1: amount, 2: percent
   const [value, setValue] = useState(''); // numeric string
@@ -38,6 +40,43 @@ const PromotionScreen = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [deletePromotionId, setDeletePromotionId] = useState<number | null>(null);
   const [menuVisible, setMenuVisible] = useState<number | null>(null);
+
+  // Helpers: date/time input masks and validators
+  const maskDateInput = useCallback((raw: string) => {
+    const d = raw.replace(/[^0-9]/g, '').slice(0, 8); // ddMMyyyy (8 digits)
+    let out = '';
+    if (d.length <= 2) out = d;
+    else if (d.length <= 4) out = `${d.slice(0,2)}/${d.slice(2)}`;
+    else out = `${d.slice(0,2)}/${d.slice(2,4)}/${d.slice(4)}`;
+    return out;
+  }, []);
+
+  const isValidDateDMY = useCallback((val: string) => {
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(val)) return false;
+    const [dd, mm, yyyy] = val.split('/').map((x) => parseInt(x, 10));
+    if (mm < 1 || mm > 12) return false;
+    if (dd < 1 || dd > 31) return false;
+    const dt = new Date(yyyy, mm - 1, dd);
+    return dt.getFullYear() === yyyy && dt.getMonth() === mm - 1 && dt.getDate() === dd;
+  }, []);
+
+  const toISODate = useCallback((dmy: string) => {
+    // convert dd/MM/yyyy -> yyyy-MM-dd
+    const [dd, mm, yyyy] = dmy.split('/');
+    return `${yyyy}-${mm}-${dd}`;
+  }, []);
+
+  const maskTimeInput = useCallback((raw: string) => {
+    const s = raw.replace(/[^0-9]/g, '').slice(0, 4); // HHmm
+    if (s.length <= 2) return s;
+    return `${s.slice(0,2)}:${s.slice(2)}`;
+  }, []);
+
+  const isValidTime = useCallback((val: string) => {
+    if (!/^\d{2}:\d{2}$/.test(val)) return false;
+    const [hh, mm] = val.split(':').map((x) => parseInt(x, 10));
+    return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59;
+  }, []);
 
   const loadPromotions = useCallback(async () => {
     try {
@@ -209,12 +248,30 @@ const PromotionScreen = () => {
       Alert.alert('Lỗi', 'Vui lòng nhập tên chương trình khuyến mãi');
       return false;
     }
-    if (!startDate.trim() || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(startDate.trim())) {
-      Alert.alert('Lỗi', 'Ngày bắt đầu phải có định dạng YYYY-MM-DD');
+    if (!startDate.trim() || !isValidDateDMY(startDate.trim())) {
+      Alert.alert('Lỗi', 'Ngày bắt đầu phải có định dạng DD/MM/YYYY và hợp lệ');
       return false;
     }
-    if (!endDate.trim() || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(endDate.trim())) {
-      Alert.alert('Lỗi', 'Ngày kết thúc phải có định dạng YYYY-MM-DD');
+    if (!endDate.trim() || !isValidDateDMY(endDate.trim())) {
+      Alert.alert('Lỗi', 'Ngày kết thúc phải có định dạng DD/MM/YYYY và hợp lệ');
+      return false;
+    }
+    // ensure end >= start
+    try {
+      const sd = new Date(toISODate(startDate));
+      const ed = new Date(toISODate(endDate));
+      if (ed < sd) {
+        Alert.alert('Lỗi', 'Ngày kết thúc phải sau hoặc bằng ngày bắt đầu');
+        return false;
+      }
+    } catch {}
+
+    if (startTime.trim() && !isValidTime(startTime.trim())) {
+      Alert.alert('Lỗi', 'Giờ bắt đầu phải có định dạng HH:mm và hợp lệ');
+      return false;
+    }
+    if (endTime.trim() && !isValidTime(endTime.trim())) {
+      Alert.alert('Lỗi', 'Giờ kết thúc phải có định dạng HH:mm và hợp lệ');
       return false;
     }
     const numericValue = parseFloat(value.replace(/[^\d.]/g, ''));
@@ -233,7 +290,7 @@ const PromotionScreen = () => {
       return false;
     }
     return true;
-  }, [name, startDate, endDate, value, type, selectedProductIds]);
+  }, [name, startDate, endDate, startTime, endTime, value, type, selectedProductIds, isValidDateDMY, isValidTime, toISODate]);
 
   const submit = useCallback(async () => {
     if (!validate()) return;
@@ -244,17 +301,16 @@ const PromotionScreen = () => {
       const normalizeTime = (t: string) => {
         const v = (t || '').trim();
         if (!v) return '';
-        // expect HH:mm, append :00 seconds
+        if (!/^\d{2}:\d{2}$/.test(v) && !/^\d{2}:\d{2}:\d{2}$/.test(v)) return '';
+        // ensure HH:mm:ss
         if (/^\d{2}:\d{2}$/.test(v)) return `${v}:00`;
-        // if already HH:mm:ss keep as is
-        if (/^\d{2}:\d{2}:\d{2}$/.test(v)) return v;
         return v;
       };
       const payload = {
         shopId,
         name: name.trim(),
-        startDate: startDate.trim(),
-        endDate: endDate.trim(),
+        startDate: toISODate(startDate.trim()),
+        endDate: toISODate(endDate.trim()),
         startTime: normalizeTime(startTime),
         endTime: normalizeTime(endTime),
         value: type === 2 ? Math.round(parseFloat(value) * 100) / 100 : Math.round(parseFloat(value)),
@@ -467,23 +523,47 @@ const PromotionScreen = () => {
 
             <View style={styles.row}>
               <View style={styles.half}> 
-                <Text style={styles.label}>Ngày bắt đầu (YYYY-MM-DD) <Text style={styles.required}>*</Text></Text>
-                <TextInput style={styles.input} value={startDate} onChangeText={setStartDate} placeholder="2025-01-01" />
+                <Text style={styles.label}>Ngày bắt đầu<Text style={styles.required}>*</Text></Text>
+                <TextInput
+                  style={styles.input}
+                  value={startDate}
+                  onChangeText={(t) => setStartDate(maskDateInput(t))}
+                  placeholder="31/12/2025"
+                  keyboardType="number-pad"
+                />
               </View>
               <View style={styles.half}>
-                <Text style={styles.label}>Ngày kết thúc (YYYY-MM-DD) <Text style={styles.required}>*</Text></Text>
-                <TextInput style={styles.input} value={endDate} onChangeText={setEndDate} placeholder="2025-01-31" />
+                <Text style={styles.label}>Ngày kết thúc<Text style={styles.required}>*</Text></Text>
+                <TextInput
+                  style={styles.input}
+                  value={endDate}
+                  onChangeText={(t) => setEndDate(maskDateInput(t))}
+                  placeholder="31/12/2025"
+                  keyboardType="number-pad"
+                />
               </View>
             </View>
 
             <View style={styles.row}>
               <View style={styles.half}> 
                 <Text style={styles.label}>Giờ bắt đầu</Text>
-                <TextInput style={styles.input} value={startTime} onChangeText={setStartTime} placeholder="08:00" />
+                <TextInput
+                  style={styles.input}
+                  value={startTime}
+                  onChangeText={(t) => setStartTime(maskTimeInput(t))}
+                  placeholder="08:00"
+                  keyboardType="number-pad"
+                />
               </View>
               <View style={styles.half}>
                 <Text style={styles.label}>Giờ kết thúc</Text>
-                <TextInput style={styles.input} value={endTime} onChangeText={setEndTime} placeholder="21:00" />
+                <TextInput
+                  style={styles.input}
+                  value={endTime}
+                  onChangeText={(t) => setEndTime(maskTimeInput(t))}
+                  placeholder="21:00"
+                  keyboardType="number-pad"
+                />
               </View>
             </View>
 
@@ -615,11 +695,11 @@ const PromotionScreen = () => {
 
             <View style={styles.row}>
               <View style={styles.half}> 
-                <Text style={styles.label}>Ngày bắt đầu (YYYY-MM-DD) <Text style={styles.required}>*</Text></Text>
+                <Text style={styles.label}>Ngày bắt đầu<Text style={styles.required}>*</Text></Text>
                 <TextInput style={styles.input} value={startDate} onChangeText={setStartDate} placeholder="2025-01-01" />
               </View>
               <View style={styles.half}>
-                <Text style={styles.label}>Ngày kết thúc (YYYY-MM-DD) <Text style={styles.required}>*</Text></Text>
+                <Text style={styles.label}>Ngày kết thúc<Text style={styles.required}>*</Text></Text>
                 <TextInput style={styles.input} value={endDate} onChangeText={setEndDate} placeholder="2025-01-31" />
               </View>
             </View>
@@ -631,7 +711,13 @@ const PromotionScreen = () => {
               </View>
               <View style={styles.half}>
                 <Text style={styles.label}>Giờ kết thúc</Text>
-                <TextInput style={styles.input} value={endTime} onChangeText={setEndTime} placeholder="21:00" />
+                <TextInput
+                  style={styles.input}
+                  value={endTime}
+                  onChangeText={(t) => setEndTime(maskTimeInput(t))}
+                  placeholder="21:00"
+                  keyboardType="number-pad"
+                />
               </View>
             </View>
 

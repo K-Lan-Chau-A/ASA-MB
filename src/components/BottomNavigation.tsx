@@ -61,6 +61,7 @@ const AddOrderButton = () => {
         openingCash: Number(parseFloat(openingCashInput || '0')) || 0,
         shopId: Number(shopId || 0),
       };
+      try { console.log('[OpenShift] payload:', body); } catch {}
       const res = await fetch(`${API_URL}/api/shifts/open-shift`, {
         method: 'POST',
         headers: {
@@ -70,16 +71,21 @@ const AddOrderButton = () => {
         body: JSON.stringify(body),
       });
       const json = await res.json().catch(() => null);
+      try { console.log('[OpenShift] status:', res.status, res.statusText); } catch {}
+      try { console.log('[OpenShift] response:', json); } catch {}
       if (!res.ok) {
         const txt = typeof json === 'object' ? JSON.stringify(json) : String(json);
         throw new Error(txt || 'Mở ca thất bại');
       }
       const envelope = json && typeof json === 'object' && 'data' in json ? json.data : json;
+      // Expected shape:
+      // { shiftId, userId, startDate, closedDate, status, revenue, openingCash, shopId }
       const newShiftId = Number(envelope?.shiftId ?? 0);
       if (!newShiftId) {
         throw new Error('Phản hồi mở ca không có shiftId');
       }
       await setShiftId(newShiftId);
+      try { console.log('[OpenShift] saved shiftId:', newShiftId); } catch {}
       setOpenShiftVisible(false);
       navigation.navigate('Order');
     } catch (e: any) {
