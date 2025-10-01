@@ -27,6 +27,7 @@ interface ProductUnit {
   isBaseUnit: boolean;
   productUnitId?: number;
   unitId?: number;
+  availableQuantity?: number; // Số lượng có sẵn cho đơn vị này
 }
 
 interface Product {
@@ -38,6 +39,7 @@ interface Product {
   units: ProductUnit[]; // Danh sách các đơn vị có sẵn
   selectedUnit: string; // Tên đơn vị hiện tại được chọn
   imageUrl?: string;
+  availableQuantity?: number; // Tổng số lượng có sẵn (đơn vị chuẩn)
 }
 
 type AvailableProduct = {
@@ -45,9 +47,10 @@ type AvailableProduct = {
   name: string;
   price: number;
   barcode?: string;
-  units: Array<{ unitName: string; price: number; quantityInBaseUnit: number; isBaseUnit: boolean }>;
+  units: Array<{ unitName: string; price: number; quantityInBaseUnit: number; isBaseUnit: boolean; availableQuantity?: number }>;
   selectedUnit: string;
   imageUrl?: string;
+  availableQuantity?: number;
 };
 
 // Memoized ProductItem component for better performance
@@ -59,6 +62,21 @@ const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast }: {
 }) => {
   const [showUnitDropdown, setShowUnitDropdown] = useState(false);
   const [unitModalVisible, setUnitModalVisible] = useState(false);
+  
+  // Filter available units based on quantity
+  const availableUnits = item.units.filter(unit => {
+    if (!item.availableQuantity || !unit.quantityInBaseUnit) return true;
+    return item.availableQuantity >= unit.quantityInBaseUnit;
+  });
+  
+  // Check if current quantity can be increased
+  const canIncreaseQuantity = () => {
+    if (!item.availableQuantity) return true;
+    const currentUnit = item.units.find(u => u.unitName === item.selectedUnit);
+    if (!currentUnit) return true;
+    const maxQuantity = Math.floor(item.availableQuantity / currentUnit.quantityInBaseUnit);
+    return item.quantity < maxQuantity;
+  };
   
   return (
     <View style={styles.productItem}>
@@ -74,7 +92,7 @@ const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast }: {
         <Text style={styles.productPrice}>{item.price.toLocaleString('vi-VN')}đ</Text>
         
         {/* Unit Selector */}
-        {item.units && item.units.length > 0 && (
+        {availableUnits && availableUnits.length > 0 && (
           <View style={styles.unitContainer}>
             <TouchableOpacity 
               style={styles.unitSelector}
@@ -82,7 +100,7 @@ const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast }: {
             >
               <Text style={styles.unitText}>
                 {(() => {
-                  const current = item.units.find(u => u.unitName === item.selectedUnit);
+                  const current = availableUnits.find(u => u.unitName === item.selectedUnit);
                   const factor = current?.quantityInBaseUnit ?? 1;
                   return factor === 1 ? current?.unitName : `${current?.unitName} ${factor}`;
                 })()}
@@ -94,7 +112,7 @@ const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast }: {
             <Modal visible={unitModalVisible} transparent animationType="fade" onRequestClose={() => setUnitModalVisible(false)}>
               <TouchableOpacity style={styles.unitPickerModalOverlay} activeOpacity={1} onPress={() => setUnitModalVisible(false)}>
                 <View style={styles.unitPickerCard}>
-                  {item.units
+                  {availableUnits
                     .slice()
                     .sort((a, b) => (a.quantityInBaseUnit || 1) - (b.quantityInBaseUnit || 1))
                     .map((unit) => (
@@ -127,10 +145,11 @@ const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast }: {
         </TouchableOpacity>
         <Text style={styles.quantity}>{item.quantity}</Text>
         <TouchableOpacity
-          style={styles.quantityButton}
-          onPress={() => onUpdateQuantity(item.id, 1)}
+          style={[styles.quantityButton, !canIncreaseQuantity() && styles.quantityButtonDisabled]}
+          onPress={() => canIncreaseQuantity() && onUpdateQuantity(item.id, 1)}
+          disabled={!canIncreaseQuantity()}
         >
-          <Text style={styles.quantityButtonText}>+</Text>
+          <Text style={[styles.quantityButtonText, !canIncreaseQuantity() && styles.quantityButtonTextDisabled]}>+</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -148,7 +167,17 @@ const AvailableProductItem = memo(({
   currentQuantity: number;
   onAddProduct: () => void;
   onUpdateQuantity: (id: string, change: number) => void;
-}) => (
+}) => {
+  // Check if current quantity can be increased
+  const canIncreaseQuantity = () => {
+    if (!item.availableQuantity) return true;
+    const currentUnit = item.units.find(u => u.unitName === item.selectedUnit);
+    if (!currentUnit) return true;
+    const maxQuantity = Math.floor(item.availableQuantity / currentUnit.quantityInBaseUnit);
+    return currentQuantity < maxQuantity;
+  };
+
+  return (
   <View style={[
     styles.availableProductItem,
     currentQuantity > 0 && styles.availableProductItemInCart
@@ -179,10 +208,11 @@ const AvailableProductItem = memo(({
         </TouchableOpacity>
         <Text style={styles.quantity}>{currentQuantity}</Text>
         <TouchableOpacity
-          style={styles.quantityButton}
-          onPress={() => onUpdateQuantity(item.id, 1)}
+          style={[styles.quantityButton, !canIncreaseQuantity() && styles.quantityButtonDisabled]}
+          onPress={() => canIncreaseQuantity() && onUpdateQuantity(item.id, 1)}
+          disabled={!canIncreaseQuantity()}
         >
-          <Text style={styles.quantityButtonText}>+</Text>
+          <Text style={[styles.quantityButtonText, !canIncreaseQuantity() && styles.quantityButtonTextDisabled]}>+</Text>
         </TouchableOpacity>
       </View>
     ) : (
@@ -196,7 +226,8 @@ const AvailableProductItem = memo(({
       </TouchableOpacity>
     )}
   </View>
-));
+  );
+});
 
 // Global state to persist products across navigations
 let persistedProducts: Product[] = [];
@@ -333,6 +364,7 @@ const OrderScreen = () => {
                 imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
                 units: [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true }],
                 selectedUnit: 'Cái',
+                availableQuantity: Number(p.quantity ?? p.availableQuantity ?? 0),
               } as AvailableProduct;
             }
           }
@@ -350,6 +382,7 @@ const OrderScreen = () => {
                   price: Number(u.price ?? candidate.price ?? 0),
                   quantityInBaseUnit: Number(u.conversionFactor ?? 1),
                   isBaseUnit: Number(u.conversionFactor ?? 1) === 1,
+                  availableQuantity: candidate.availableQuantity ? Math.floor(candidate.availableQuantity / Number(u.conversionFactor ?? 1)) : undefined,
                 })).sort((a: any, b: any) => (a.quantityInBaseUnit || 1) - (b.quantityInBaseUnit || 1));
                 const base = units.find((u: any) => u.isBaseUnit) || units[0];
                 candidate = { ...candidate, units, price: base.price, selectedUnit: base.unitName };
@@ -383,9 +416,10 @@ const OrderScreen = () => {
       const productToAdd = {
         ...newProduct,
         units: [
-          { unitName: 'Cái', price: newProduct.price, quantityInBaseUnit: 1, isBaseUnit: true }
+          { unitName: 'Cái', price: newProduct.price, quantityInBaseUnit: 1, isBaseUnit: true, availableQuantity: (newProduct as any).availableQuantity }
         ],
-        selectedUnit: 'Cái'
+        selectedUnit: 'Cái',
+        availableQuantity: (newProduct as any).availableQuantity
       };
       addProduct(productToAdd);
       console.log('📱 Added new product from AddProductScreen:', newProduct.name);
@@ -600,6 +634,7 @@ const OrderScreen = () => {
               isBaseUnit: Number(u.conversionFactor ?? 1) === 1,
               productUnitId: Number(u.productUnitId ?? u.id ?? 0) || undefined,
               unitId: Number(u.unitId ?? 0) || undefined,
+              availableQuantity: item.availableQuantity ? Math.floor(item.availableQuantity / Number(u.conversionFactor ?? 1)) : undefined,
             }))
           : item.units;
         try {
@@ -650,14 +685,16 @@ const OrderScreen = () => {
         const data = await res.json();
         const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
         const mapped: AvailableProduct[] = items.map((p: any, idx: number) => {
+          const availableQuantity = Number(p.quantity ?? p.availableQuantity ?? 0);
           const units = Array.isArray(p.units) && p.units.length > 0
             ? (p.units as Array<{ name?: string; unitName?: string; price?: number; conversionFactor?: number; quantityInBaseUnit?: number; isBaseUnit?: boolean; }>).map((u) => ({
                 unitName: String(u.name ?? u.unitName ?? 'Cái'),
                 price: Number(u.price ?? p.price ?? 0),
                 quantityInBaseUnit: Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1),
                 isBaseUnit: Boolean(u.isBaseUnit ?? false),
+                availableQuantity: availableQuantity ? Math.floor(availableQuantity / Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1)) : undefined,
               }))
-            : [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true }];
+            : [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true, availableQuantity }];
           const selectedUnit = (units.find(u => u.isBaseUnit) || units[0]).unitName;
           return {
             id: String(p.id ?? p.productId ?? idx + 1),
@@ -667,6 +704,7 @@ const OrderScreen = () => {
             imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
             units,
             selectedUnit,
+            availableQuantity,
           };
         });
         setAvailableProducts(mapped);
@@ -950,6 +988,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#009DA5',
     fontWeight: 'bold',
+  },
+  quantityButtonDisabled: {
+    backgroundColor: '#F5F5F5',
+    borderColor: '#E5E5E5',
+    opacity: 0.5,
+  },
+  quantityButtonTextDisabled: {
+    color: '#999',
   },
   quantity: {
     fontSize: 16,

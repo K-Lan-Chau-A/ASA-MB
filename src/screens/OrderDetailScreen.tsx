@@ -8,7 +8,7 @@ import { getAuthToken, getShopId } from '../services/AuthStore';
 import { RootStackParamList } from '../types/navigation';
 
 type DetailLine = { name: string; qty: number; price: number; unit?: string };
-type HeaderInfo = { code: string; buyer: string; time: string; total: number; methodText: string };
+type HeaderInfo = { code: string; buyer: string; time: string; total: number; methodText: string; voucherId?: number | null; discount?: number; note?: string };
 
 const OrderDetailScreen = () => {
   const route = useRoute<RouteProp<RootStackParamList, 'OrderDetail'>>();
@@ -19,6 +19,7 @@ const OrderDetailScreen = () => {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [header, setHeader] = useState<HeaderInfo>({ code: '', buyer: 'Khách lẻ', time: '', total: 0, methodText: '' });
   const [lines, setLines] = useState<DetailLine[]>([]);
+  const [voucherCode, setVoucherCode] = useState<string | null>(null);
 
   const methodFromCode = (code: unknown): { icon: string; text: string } => {
     // Accept numeric codes or string names from API
@@ -58,11 +59,27 @@ const OrderDetailScreen = () => {
       const o: any = items[0] || {};
       const idNum = Number(o?.orderId ?? o?.id ?? orderId);
       const code = idNum > 0 ? `#${idNum}` : '#';
-      const buyer = String(o?.customerName ?? 'Khách lẻ');
+      let buyer = String(o?.customerName ?? 'Khách lẻ');
       const time = formatVnDateTime(o?.createdAt ?? o?.datetime);
       const total = Number(o?.totalPrice ?? o?.totalAmount ?? 0);
       const m = methodFromCode(o?.paymentMethod ?? o?.paymentMethodCode);
-      setHeader({ code, buyer, time, total, methodText: m.text });
+      const voucherId = o?.voucherId != null ? Number(o.voucherId) : null;
+      const discount = Number(o?.discount ?? 0) || undefined;
+      const note = o?.note ? String(o.note) : undefined;
+      // If customerId exists, fetch full name from customers API
+      try {
+        const custId = o?.customerId != null ? Number(o.customerId) : 0;
+        if (custId && custId > 0) {
+          const cRes = await fetch(`${API_URL}/api/customers?CustomerId=${custId}&ShopId=${shopId}&page=1&pageSize=1`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
+          const cJson = await cRes.json().catch(() => ({}));
+          const cItems: any[] = Array.isArray(cJson?.items) ? cJson.items : Array.isArray(cJson) ? cJson : [];
+          const c = cItems[0] || null;
+          if (c?.fullName) buyer = String(c.fullName);
+        }
+      } catch {}
+      setHeader({ code, buyer, time, total, methodText: m.text, voucherId, discount, note });
     } catch {
     } finally {
       setLoading(false);
@@ -125,6 +142,27 @@ const OrderDetailScreen = () => {
     }
   }, [orderId]);
 
+  // Fetch voucher code when voucherId is available
+  useEffect(() => {
+    const run = async () => {
+      try {
+        if (!header?.voucherId) { setVoucherCode(null); return; }
+        const token = await getAuthToken();
+        const shopId = (await getShopId()) ?? 0;
+        const url = `${API_URL}/api/vouchers?VoucherId=${header.voucherId}&ShopId=${shopId}&page=1&pageSize=1`;
+        const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+        const data = await res.json().catch(() => ({}));
+        const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+        const v = items[0] || null;
+        const code = v?.code ? String(v.code) : null;
+        setVoucherCode(code);
+      } catch {
+        setVoucherCode(null);
+      }
+    };
+    run();
+  }, [header?.voucherId]);
+
   useEffect(() => {
     loadOrderHeader();
     loadOrderDetails();
@@ -158,6 +196,24 @@ const OrderDetailScreen = () => {
             <Icon name="credit-card" size={18} color="#666" />
             <Text style={styles.detailText}>PTTT: {header.methodText}</Text>
           </View>
+          {!!header.voucherId && (
+            <View style={styles.detailRow}>
+              <Icon name="ticket-percent" size={18} color="#666" />
+              <Text style={styles.detailText}>Voucher: {voucherCode || `#${header.voucherId}`}</Text>
+            </View>
+          )}
+          {typeof header.discount === 'number' && header.discount > 0 && (
+            <View style={styles.detailRow}>
+              <Icon name="sale" size={18} color="#666" />
+              <Text style={styles.detailText}>Giảm giá: {Number(header.discount).toLocaleString('vi-VN')}₫</Text>
+            </View>
+          )}
+          {!!header.note && (
+            <View style={styles.detailRow}>
+              <Icon name="note-text" size={18} color="#666" />
+              <Text style={styles.detailText}>Ghi chú: {header.note}</Text>
+            </View>
+          )}
 
           <View style={styles.sectionDivider} />
 

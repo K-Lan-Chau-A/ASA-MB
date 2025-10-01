@@ -62,10 +62,11 @@ const ProductItem = memo(({ item, onEdit, onDelete }: {
   const actionBtnRef = React.useRef<View>(null);
   
   const getStockStatus = (quantity?: number) => {
-    if (!quantity) return { text: 'Không xác định số lượng', color: '#999' };
-    if (quantity <= 5) return { text: `Còn ${quantity}`, color: '#FF6B6B' };
-    if (quantity <= 20) return { text: `Còn ${quantity}`, color: '#FFA726' };
-    return { text: `Còn ${quantity}`, color: '#4CAF50' };
+    const q = typeof quantity === 'number' ? quantity : 0;
+    if (q <= 0) return { text: `Hết hàng`, color: '#FF6B6B' };
+    if (q <= 5) return { text: `Còn ${q}`, color: '#FF6B6B' };
+    if (q <= 20) return { text: `Còn ${q}`, color: '#FFA726' };
+    return { text: `Còn ${q}`, color: '#4CAF50' };
   };
 
   const stockStatus = getStockStatus(item.quantity);
