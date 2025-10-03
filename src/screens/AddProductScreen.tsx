@@ -18,6 +18,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
 import API_URL from '../config/api';
 import { getShopId, getAuthToken } from '../services/AuthStore';
+import { useInvalidateProducts } from '../services/products';
 
 interface NewProduct {
   barcode: string;
@@ -46,6 +47,7 @@ const units = [
 ];
 
 const AddProductScreen = () => {
+  const invalidateProducts = useInvalidateProducts();
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'AddProduct'>>();
   const [shopId, setShopId] = useState<number>(0);
@@ -617,6 +619,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
           {
             text: 'OK',
             onPress: () => {
+              try { invalidateProducts(); } catch {}
               navigation.goBack();
             },
           },

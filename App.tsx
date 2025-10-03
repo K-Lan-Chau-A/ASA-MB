@@ -5,6 +5,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import LoginScreen from './src/screens/LoginScreen';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './src/services/queryClient';
 import BottomNavigation from './src/components/BottomNavigation';
 import NotificationScreen from './src/screens/NotificationScreen';
 import ScannerScreen from './src/screens/ScannerScreen';
@@ -34,6 +36,7 @@ function App() {
 
   return (
     <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
       <NavigationContainer>
         <Stack.Navigator 
         initialRouteName="Login"
@@ -134,6 +137,7 @@ function App() {
         <Stack.Screen name="SettingScreen" component={SettingScreen} options={{ headerShown: false, animation: 'slide_from_right' }} />
       </Stack.Navigator>
       </NavigationContainer>
+      </QueryClientProvider>
     </SafeAreaProvider>
   );
 }

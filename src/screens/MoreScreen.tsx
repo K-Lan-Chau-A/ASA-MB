@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types/navigation';
 import API_URL from '../config/api';
-import { getAuthToken, getShiftId, refreshOpenShiftId, clearShiftId } from '../services/AuthStore';
+import { getAuthToken, getShiftId, refreshOpenShiftId, clearShiftId, logoutLocal } from '../services/AuthStore';
 
 interface MenuItem {
   id: number;
@@ -75,6 +75,16 @@ const MoreScreen = () => {
     { id: 10, title: 'Đóng ca', onPress: handleCloseShiftPress },
     { id: 11, title: 'Báo cáo', onPress: () => navigation.navigate('ReportScreen') },
     { id: 12, title: 'Cài đặt', onPress: () => navigation.navigate('SettingScreen') },
+    { id: 13, title: 'Đăng xuất', onPress: async () => {
+        try {
+          await logoutLocal();
+        } finally {
+          // Reset navigation to Login screen
+          // @ts-ignore - name matches RootStackParamList
+          navigation.reset({ index: 0, routes: [{ name: 'Login' as any }] });
+        }
+      }
+    },
   ];
 
   const renderMenuItem = (item: MenuItem) => (

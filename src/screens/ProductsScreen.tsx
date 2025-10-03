@@ -21,6 +21,7 @@ import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context'
 import API_URL from '../config/api';
 import { getShopId, getAuthToken } from '../services/AuthStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useProductsQuery } from '../services/products';
 
 interface ProductUnit {
   unitName: string;
@@ -364,14 +365,18 @@ const ProductsScreen = () => {
 
   // Note: Products already have categoryName from API, no need for enrichment
 
+  const { data: queriedProducts, isLoading: queryLoading, refetch } = useProductsQuery();
+
   useEffect(() => {
-    // Load categories first, then products
-    const loadData = async () => {
-      await loadCategories();
-      await loadProducts(true, false);
-    };
-    loadData();
-  }, [loadCategories, loadProducts]);
+    // Load categories first
+    loadCategories();
+  }, [loadCategories]);
+
+  useEffect(() => {
+    if (queriedProducts && Array.isArray(queriedProducts)) {
+      setProducts(queriedProducts as any);
+    }
+  }, [queriedProducts]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -519,7 +524,7 @@ const ProductsScreen = () => {
 
           {/* Product List */}
           <View style={styles.productList}>
-            {isLoading ? (
+            {isLoading || queryLoading ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyText}>Đang tải sản phẩm...</Text>
               </View>

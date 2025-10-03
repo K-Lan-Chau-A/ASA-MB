@@ -143,6 +143,17 @@ export const clearCredentials = async (): Promise<void> => {
   try { await AsyncStorage.removeItem(CREDS_KEY); } catch {}
 };
 
+// Local-only logout: clear auth data and saved credentials
+export const logoutLocal = async (): Promise<void> => {
+  try {
+    await Promise.allSettled([
+      AsyncStorage.removeItem(STORAGE_KEY),
+      AsyncStorage.removeItem(CREDS_KEY),
+    ]);
+    try { console.log('[AuthStore][logoutLocal] cleared auth and credentials'); } catch {}
+  } catch {}
+};
+
 // Register FCM token for the current logged-in user
 export const registerFCMTokenForCurrentUser = async (fcmToken: string, uniqueId: string | null = null): Promise<boolean> => {
   try {

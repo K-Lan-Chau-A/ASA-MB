@@ -172,7 +172,7 @@ const LoginScreen = () => {
         )}
         <View style={styles.logoContainer}>
           <Image
-            source={require('../assets/images/asianUnicorn.png')}
+            source={require('../assets/images/logoASA.png')}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -251,10 +251,12 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     marginTop: 40,
+    width: '100%',
   },
   logo: {
-    width: 150,
-    height: 150,
+    width: '100%',
+    height: 200,
+    paddingTop: 100,
   },
   formContainer: {
     width: '100%',
