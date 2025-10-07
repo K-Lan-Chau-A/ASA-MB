@@ -1,16 +1,28 @@
-import React from 'react';
+import React, { useCallback, useMemo, useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { fetchNotifications, NotificationItem as NotificationDTO } from '../services/notifications';
+import { getShopId as loadShopId } from '../services/AuthStore';
+import { notificationsStore } from '../services/NotificationsStore';
 
-const NotificationItem = ({ icon, color, title, description, time }) => (
+type RenderNotificationProps = {
+  icon: string;
+  color: string;
+  title: string;
+  description: string;
+  time: string;
+};
+
+const NotificationItem = ({ icon, color, title, description, time }: RenderNotificationProps) => (
   <TouchableOpacity style={styles.notificationItem}>
     <View style={[styles.iconContainer, { backgroundColor: color }]}>
       <Icon name={icon} size={24} color="#FFFFFF" />
@@ -30,50 +42,101 @@ const NotificationScreen = () => {
     navigation.goBack(); // Sử dụng goBack() để quay lại màn hình trước đó
   };
 
-  const notifications = [
-    {
-      icon: 'package-variant',
-      color: '#4CAF50',
-      title: 'Xuất kho thành công',
-      description: 'Đã xuất xong đường cho đơn hàng #DH001',
-      time: '2 phút trước',
+  const PAGE_SIZE = 10;
+  const [shopId, setShopId] = useState<number | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    loadShopId().then((id) => {
+      if (mounted) setShopId(id);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const mapTypeToIconAndColor = useCallback((type: NotificationDTO['type']): { icon: string; color: string } => {
+    switch (type) {
+      case 1: // Cảnh báo
+        return { icon: 'alert-outline', color: '#F44336' };
+      case 2: // Ưu đãi
+        return { icon: 'sale-outline', color: '#9C27B0' };
+      case 3: // Gợi ý
+        return { icon: 'lightbulb-on-outline', color: '#FFC107' };
+      case 4: // Thành công
+        return { icon: 'check-circle-outline', color: '#4CAF50' };
+      case 0: // Default
+      default:
+        return { icon: 'bell-outline', color: '#2196F3' };
+    }
+  }, []);
+
+  const formatRelativeTime = useCallback((iso: string): string => {
+    const created = new Date(iso).getTime();
+    const now = Date.now();
+    const diff = Math.max(0, now - created);
+    const minute = 60 * 1000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+    if (diff < minute) return 'Vừa xong';
+    if (diff < hour) return `${Math.floor(diff / minute)} phút trước`;
+    if (diff < day) return `${Math.floor(diff / hour)} giờ trước`;
+    return `${Math.floor(diff / day)} ngày trước`;
+  }, []);
+
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isRefetching,
+  } = useInfiniteQuery({
+    queryKey: ['notifications', shopId],
+    queryFn: ({ pageParam = 1 }) =>
+      fetchNotifications({ shopId: shopId as number, page: pageParam as number, pageSize: PAGE_SIZE }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      if (lastPage.page < lastPage.totalPages) return lastPage.page + 1;
+      return undefined;
     },
-    {
-      icon: 'clock-outline',
-      color: '#FFC107',
-      title: 'Hẹn giờ kiểm kho',
-      description: 'Kiểm kho định kỳ sẽ bắt đầu lúc 14:00',
-      time: '3 phút trước',
-    },
-    {
-      icon: 'alert-outline',
-      color: '#F44336',
-      title: 'Cảnh báo tồn kho',
-      description: 'Nguyên liệu bột mì sắp hết (còn 5kg)',
-      time: '5 phút trước',
-    },
-    {
-      icon: 'check-circle-outline',
-      color: '#2196F3',
-      title: 'Đặt hàng thành công',
-      description: 'Đã đặt xong đường thành công từ nhà cung cấp NCC XYZ',
-      time: 'Hôm qua',
-    },
-    {
-      icon: 'bell-outline',
-      color: '#FF9800',
-      title: 'Nhắc nhở đặt hàng',
-      description: 'Đặt 30 thùng nước suối Aquafina 500ml từ nhà cung cấp ABC',
-      time: 'Hôm qua',
-    },
-    {
-      icon: 'close-circle-outline',
-      color: '#E91E63',
-      title: 'Đặt hàng thất bại',
-      description: 'Nhà cung cấp đã hủy đơn hàng 5 thùng mì Kokomi',
-      time: 'Hôm qua',
-    },
-  ];
+    enabled: typeof shopId === 'number' && shopId > 0,
+  });
+
+  const flatData = useMemo(() => {
+    const items = data?.pages?.flatMap(p => p.items) ?? [];
+    return items;
+  }, [data]);
+
+  // Whenever list is refreshed, recompute unread count from items (isRead === false)
+  useEffect(() => {
+    const items = flatData ?? [];
+    const unread = items.reduce((acc, it) => acc + (it?.isRead ? 0 : 1), 0);
+    notificationsStore.setCount(unread);
+  }, [flatData]);
+
+  const renderItem = useCallback(({ item }: { item: NotificationDTO }) => {
+    const map = mapTypeToIconAndColor(item.type);
+    return (
+      <NotificationItem
+        icon={map.icon}
+        color={map.color}
+        title={item.title}
+        description={item.content}
+        time={formatRelativeTime(item.createdAt)}
+      />
+    );
+  }, [mapTypeToIconAndColor, formatRelativeTime]);
+
+  const keyExtractor = useCallback((item: NotificationDTO) => String(item.notificationId), []);
+
+  const onEndReached = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top','bottom','left','right']}>
@@ -83,18 +146,34 @@ const NotificationScreen = () => {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Thông báo</Text>
       </View>
-      
-      <ScrollView style={styles.content}>
-        <Text style={styles.sectionTitle}>Hôm nay</Text>
-        {notifications.slice(0, 3).map((notification, index) => (
-          <NotificationItem key={`today-${index}`} {...notification} />
-        ))}
 
-        <Text style={styles.sectionTitle}>Hôm qua</Text>
-        {notifications.slice(3).map((notification, index) => (
-          <NotificationItem key={`yesterday-${index}`} {...notification} />
-        ))}
-      </ScrollView>
+      <FlatList
+        style={styles.content}
+        data={flatData}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        onEndReachedThreshold={0.5}
+        onEndReached={onEndReached}
+        refreshing={(typeof shopId !== 'number' || shopId <= 0) ? true : (isLoading || isRefetching)}
+        onRefresh={refetch}
+        ListHeaderComponent={
+          <Text style={styles.sectionTitle}>Tất cả</Text>
+        }
+        ListFooterComponent={
+          isFetchingNextPage ? (
+            <View style={{ padding: 16, alignItems: 'center' }}>
+              <Text>Đang tải thêm...</Text>
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          !isLoading && !isError ? (
+            <View style={{ padding: 24, alignItems: 'center' }}>
+              <Text>Không có thông báo</Text>
+            </View>
+          ) : null
+        }
+      />
     </SafeAreaView>
   );
 };

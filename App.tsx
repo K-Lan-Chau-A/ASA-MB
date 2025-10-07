@@ -27,12 +27,36 @@ import LogActivityScreen from './src/screens/LogActivityScreen';
 import ManageAccount from './src/screens/ManageAccount';
 import ReportScreen from './src/screens/ReportScreen';
 import SettingScreen from './src/screens/SettingScreen';
+import { signalRService } from './src/services/SignalRService';
+import { getShopId } from './src/services/AuthStore';
+import { notificationsStore } from './src/services/NotificationsStore';
 
 const Stack = createNativeStackNavigator();
 
 function App() {
   useNotification();
-  
+  useEffect(() => {
+    let mounted = true;
+    let unsubscribe: (() => void) | null = null;
+    (async () => {
+      const id = await getShopId();
+      if (mounted && typeof id === 'number' && id > 0) {
+        try { await signalRService.connect(id); } catch {}
+        // Subscribe realtime events to update badge and refresh list
+        unsubscribe = signalRService.subscribe((evt) => {
+          try { console.log('[SignalR][event]', evt?.type); } catch {}
+          notificationsStore.inc(1);
+          // Refresh notifications list in background
+          try { queryClient.invalidateQueries({ queryKey: ['notifications', id] }); } catch {}
+        });
+      }
+    })();
+    return () => {
+      mounted = false;
+      if (unsubscribe) { try { unsubscribe(); } catch {} }
+      signalRService.disconnect();
+    };
+  }, []);
 
   return (
     <SafeAreaProvider>
