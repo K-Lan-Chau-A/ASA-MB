@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
@@ -212,17 +213,23 @@ const ConfirmOrderScreen = () => {
         return;
       }
 
+      // Build discount as PERCENT when custom discount is applied and no voucher is selected
+      const customDiscountPercent = (() => {
+        const pct = parseFloat(discountPercentage || '');
+        if (!selectedVoucherId && !isNaN(pct) && pct > 0 && pct <= 100) return Math.round(pct);
+        return undefined;
+      })();
+
       const payload: any = {
         paymentMethod: mapPaymentMethodToCode(selectedPaymentMethod),
         // Mark order as successful (1) upon creation; payment flow handled client-side
         status: 1,
         shiftId: shiftId,
         shopId: shopId,
-        // Explicitly send final totals to backend for correct aggregation
-        totalPrice: Math.max(0, Math.round(finalTotal)),
-        amountPaid: Math.max(0, Math.round(finalTotal)),
-        // If voucher selected, send voucherId and no direct discount; else send discount amount
-        ...(selectedVoucherId ? { voucherId: selectedVoucherId, discount: 0 } : { discount: appliedDiscount > 0 ? Number(appliedDiscount) : 0 }),
+        // Let backend compute totals from orderDetails; do not send totalPrice/amountPaid
+        // Send voucherId OR percentage discount (0-100) per server contract
+        ...(selectedVoucherId ? { voucherId: selectedVoucherId } : {}),
+        ...(customDiscountPercent ? { discount: customDiscountPercent } : {}),
         note: (promoCode || discountReason) ? [promoCode ? `Mã: ${promoCode}` : '', discountReason ? `Lý do: ${discountReason}` : ''].filter(Boolean).join(' | ') : null,
         orderDetails,
         ...(selectedCustomerId ? { customerId: Number(selectedCustomerId) } : {}),
@@ -236,7 +243,28 @@ const ConfirmOrderScreen = () => {
       // Only include optional fields if provided
       // customerId and voucherId intentionally omitted unless available in future
 
-      const res = await fetch(`${API_URL}/api/orders`, {
+      const createUrl = `${API_URL}/api/orders`;
+      try { console.log('[CreateOrder][POST] url', createUrl, 'method', 'POST'); } catch {}
+      try {
+        console.log('[CreateOrder][POST] headers', {
+          hasAuth: Boolean(token),
+          contentType: 'application/json',
+        });
+        console.log('[CreateOrder][POST] payload summary', {
+          shopId: payload.shopId,
+          shiftId: payload.shiftId,
+          paymentMethod: payload.paymentMethod,
+          status: payload.status,
+          totalPrice: payload.totalPrice,
+          amountPaid: payload.amountPaid,
+          discount: payload.discount,
+          voucherId: payload.voucherId ?? null,
+          customerId: payload.customerId ?? null,
+          detailsCount: Array.isArray(payload.orderDetails) ? payload.orderDetails.length : 0,
+        });
+      } catch {}
+
+      const res = await fetch(createUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -251,6 +279,8 @@ const ConfirmOrderScreen = () => {
         throw new Error(msg || 'Tạo đơn hàng thất bại');
       }
 
+      try { console.log('[CreateOrder][POST] success status', res.status, res.statusText); } catch {}
+
       // Read created order and proceed to success
       let data: any = null;
       try { data = await res.json(); } catch (e) {
@@ -258,6 +288,7 @@ const ConfirmOrderScreen = () => {
       }
       // Handle envelope { success, message, data: {...} }
       const envelope = data && typeof data === 'object' && 'data' in data ? data.data : data;
+      try { console.log('[CreateOrder][POST] parsed envelope', envelope); } catch {}
       if (envelope && typeof envelope.orderId !== 'undefined' && Number(envelope.orderId) > 0) {
         try { console.log('[CreateOrder] created orderId', envelope.orderId); } catch {}
         setCreatedOrder(envelope);

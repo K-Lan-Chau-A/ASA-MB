@@ -11,6 +11,8 @@ export type AuthData = {
   avatar?: string | null;
   accessToken: string;
   createdAt?: string;
+  // optional list of feature ids this user has access to
+  featureIds?: number[];
 };
 
 const STORAGE_KEY = 'auth:data:v1';
@@ -61,6 +63,12 @@ export const getShiftId = async (): Promise<number | null> => {
 export const getUserId = async (): Promise<number | null> => {
   const d = await authStore.load();
   return typeof d?.userId === 'number' ? d!.userId : null;
+};
+
+export const getFeatureIds = async (): Promise<number[]> => {
+  const d = await authStore.load();
+  const ids = (d as any)?.featureIds;
+  return Array.isArray(ids) ? ids.map((n: any) => Number(n)).filter((n: number) => !Number.isNaN(n)) : [];
 };
 
 export const setShiftId = async (shiftId: number): Promise<void> => {
@@ -180,3 +188,33 @@ export const registerFCMTokenForCurrentUser = async (fcmToken: string, uniqueId:
   }
 };
 
+// Save login response data into auth store
+export const saveLoginData = async (loginJson: any): Promise<boolean> => {
+  try {
+    const payload = (loginJson && loginJson.data) ? loginJson.data : loginJson;
+    const userId = Number(payload?.userId ?? 0);
+    const status = Number(payload?.status ?? 0);
+    const shopId = Number(payload?.shopId ?? 0);
+    const role = Number(payload?.role ?? 0);
+    const username = String(payload?.username ?? '');
+    const token = String(payload?.accessToken ?? '');
+    if (!(userId > 0) || !(shopId > 0) || !token) return false;
+    // Do not persist inactive users
+    if (status === 0) return false;
+    const auth: AuthData = {
+      userId,
+      username,
+      status,
+      shopId,
+      role,
+      avatar: payload?.avatar ?? null,
+      accessToken: token,
+      createdAt: payload?.createdAt ?? undefined,
+      featureIds: Array.isArray(payload?.featureIds) ? payload.featureIds.map((n: any) => Number(n)).filter((n: number) => !Number.isNaN(n)) : [],
+    };
+    await authStore.save(auth);
+    return true;
+  } catch {
+    return false;
+  }
+};

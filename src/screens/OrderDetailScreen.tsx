@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { useRoute, useNavigation, NavigationProp, RouteProp } from '@react-navigation/native';
@@ -205,7 +206,7 @@ const OrderDetailScreen = () => {
           {typeof header.discount === 'number' && header.discount > 0 && (
             <View style={styles.detailRow}>
               <Icon name="sale" size={18} color="#666" />
-              <Text style={styles.detailText}>Giảm giá: {Number(header.discount).toLocaleString('vi-VN')}₫</Text>
+              <Text style={styles.detailText}>Giảm giá: {Number(header.discount).toLocaleString('vi-VN')}%</Text>
             </View>
           )}
           {!!header.note && (

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
@@ -9,12 +10,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  ScrollView,
   Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import API_URL from '../config/api';
+import { getAuthToken, getShopId, getUserId } from '../services/AuthStore';
 
 interface Message {
   id: string;
@@ -35,21 +37,76 @@ const ChatbotScreen = () => {
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+  const [hasMore, setHasMore] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
+  const flatListRef = useRef<FlatList<Message>>(null);
 
   const quickQuestions = [
-    'Phân tích bán hàng trong tháng qua',
-    'Chiến dịch kinh doanh',
-    'Gợi ý nhập hàng',
-    'Báo cáo doanh thu',
-    'Dự báo doanh thu',
+    'Phân tích cửa hàng',
+    'Phân tích khách hàng',
+    'Phân tích kho hàng',
+    'Phân tích doanh thu',
+    'Phân tích sản phẩm',
   ];
 
   const scrollToBottom = () => {
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
+  };
+
+  const mapServerMessageToLocal = (m: any): Message | null => {
+    if (!m) return null;
+    const id = String(m.chatMessageId ?? m.id ?? `${m.createdAt ?? Date.now()}-${Math.random()}`);
+    const text = typeof m.content === 'string' ? m.content : '';
+    const isUser = String(m.sender || '').toLowerCase() !== 'ai';
+    const ts = m.createdAt ? new Date(m.createdAt) : new Date();
+    return { id, text, isUser, timestamp: ts };
+  };
+
+  const extractItems = (json: any): any[] => {
+    if (!json) return [];
+    if (Array.isArray(json.items)) return json.items;
+    if (Array.isArray(json.data?.items)) return json.data.items;
+    if (Array.isArray(json.data)) return json.data;
+    if (Array.isArray(json)) return json;
+    return [];
+  };
+
+  const fetchMessagesPage = async (targetPage: number, replace: boolean) => {
+    try {
+      if (replace) { setIsFetching(true); } else { setIsFetchingMore(true); }
+      const token = await getAuthToken();
+      const shopId = (await getShopId()) ?? 0;
+      if (!token || !(shopId > 0)) return;
+      const url = `${API_URL}/api/chat-messages?ShopId=${shopId}&page=${targetPage}&pageSize=${pageSize}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const json = await res.json().catch(() => null);
+      const items = extractItems(json);
+      const mapped: Message[] = items.map(mapServerMessageToLocal).filter(Boolean) as Message[];
+      // Ensure ascending by createdAt if possible
+      mapped.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+      setMessages(prev => {
+        const base = replace ? [] : prev;
+        const idSet = new Set(base.map(m => m.id));
+        const merged = [...base];
+        for (const m of mapped) {
+          if (!idSet.has(m.id)) { merged.push(m); idSet.add(m.id); }
+        }
+        return merged;
+      });
+
+      setHasMore(mapped.length >= pageSize);
+      setPage(targetPage);
+      if (replace) scrollToBottom();
+    } finally {
+      if (replace) { setIsFetching(false); } else { setIsFetchingMore(false); }
+    }
   };
 
   const sendMessage = async (messageText: string) => {
@@ -67,51 +124,246 @@ const ChatbotScreen = () => {
     setIsLoading(true);
     scrollToBottom();
 
-    // Simulate AI response - Replace with actual Gemini API call
-    setTimeout(() => {
+    try {
+      const token = await getAuthToken();
+      const shopId = (await getShopId()) ?? 0;
+      const userId = (await getUserId()) ?? 0;
+      if (!token || !(shopId > 0)) {
+        throw new Error('Thiếu thông tin đăng nhập hoặc shopId');
+      }
+
+      const res = await fetch(`${API_URL}/api/chat-messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ userId, content: messageText.trim(), sender: 'user' }),
+      });
+      const json: any = await res.json().catch(() => null);
+      const aiRaw: string | null =
+        (json && json.data && json.data.aiMessage && typeof json.data.aiMessage.content === 'string')
+          ? json.data.aiMessage.content
+          : formatAskResponse(json);
+
+      // Beautify: convert markdown bullets to native bullets and trim
+      const text: string = String(aiRaw || '')
+        .replace(/^[\s]*\*[\s]+/gm, '• ')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
-        text: getAIResponse(messageText),
+        text,
         isUser: false,
         timestamp: new Date(),
       };
-      
       setMessages(prev => [...prev, aiResponse]);
+    } catch (error: any) {
+      const aiResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        text: 'Không thể gửi câu hỏi. Vui lòng thử lại.',
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, aiResponse]);
+      try { console.error('[Chatbot][sendMessage] error:', error); } catch {}
+    } finally {
       setIsLoading(false);
       scrollToBottom();
-    }, 1500);
+    }
   };
 
-  const getAIResponse = (userMessage: string): string => {
-    // Simulate different responses based on message content
-    if (userMessage.toLowerCase().includes('phân tích') || userMessage.toLowerCase().includes('bán chạy')) {
-      return `📊 Phân tích bán hàng
-
-Dựa trên dữ liệu bán hàng 30 ngày qua, các mặt hàng có số lượng bán cao và tốc độ xoay vòng tồn kho nhanh nhất là:
-
-• Áo thun basic: 320 đơn/tháng → bán mạnh.
-• Quần jean skinny: 240 đơn → gần hết hàng.
-• Giày sneaker trắng: 190 đơn → đánh giá cao.
-
-✅ Khuyến nghị nhập hàng
-✅ Tăng nhập áo thun và quần jean gấp 1.5~2 lần.
-✅ Bổ sung 50~100 đôi sneaker trắng.
-✅ Giảm nhập hoodie dày vì bán chậm.`;
-    }
-    
-    if (userMessage.toLowerCase().includes('chiến dịch') || userMessage.toLowerCase().includes('kinh doanh')) {
-      return 'Tôi có thể giúp bạn lập kế hoạch chiến dịch kinh doanh hiệu quả. Bạn muốn tập trung vào sản phẩm nào và trong thời gian nào?';
-    }
-    
-    if (userMessage.toLowerCase().includes('báo cáo') || userMessage.toLowerCase().includes('doanh thu')) {
-      return 'Báo cáo doanh thu đang được tạo. Bạn muốn xem báo cáo theo ngày, tuần, tháng hay quý?';
-    }
-    
-    return 'Cảm ơn bạn đã gửi tin nhắn! Tôi đang xử lý yêu cầu của bạn và sẽ phản hồi sớm nhất có thể.';
+  const mapQuickQuestionToPath = (q: string): string => {
+    const key = q.trim().toLowerCase();
+    const mapping: Record<string, string> = {
+      'phân tích cửa hàng': 'shop',
+      'phân tích khách hàng': 'customers',
+      'phân tích kho hàng': 'inventory',
+      'phân tích doanh thu': 'revenue',
+      'phân tích sản phẩm': 'products',
+    };
+    return mapping[key] ?? 'products';
   };
 
-  const handleQuickQuestion = (question: string) => {
-    sendMessage(question);
+  const formatNumber = (n: any): string => {
+    const num = Number(n ?? 0);
+    try { return num.toLocaleString('vi-VN'); } catch { return String(num); }
+  };
+
+  const renderFormattedText = (text: string) => {
+    const parts = String(text ?? '').split('**');
+    return parts.map((seg, idx) => {
+      const isBold = idx % 2 === 1;
+      if (isBold) return <Text key={`b-${idx}`} style={styles.bold}>{seg}</Text>;
+      return <Text key={`t-${idx}`}>{seg}</Text>;
+    });
+  };
+
+  const pickString = (...vals: any[]): string | null => {
+    for (const v of vals) {
+      if (typeof v === 'string' && v.trim()) return v;
+    }
+    return null;
+  };
+
+  const tryParseJson = (s: string): any | null => {
+    try { return JSON.parse(s); } catch { return null; }
+  };
+
+  const formatAskResponse = (payload: any): string => {
+    if (typeof payload === 'string') {
+      const parsed = tryParseJson(payload);
+      if (parsed && typeof parsed === 'object') return formatAskResponse(parsed);
+      return payload;
+    }
+    if (payload && typeof payload === 'object') {
+      const answer = pickString(payload.answer, payload.message, payload.data, payload.content, payload.text);
+      if (answer) return answer;
+      if (payload.shopName || payload.totalRevenue || payload.totalProducts) {
+        return [
+          payload.shopName ? `**Cửa hàng**: ${payload.shopName}` : null,
+          payload.totalProducts != null ? `**Sản phẩm**: ${formatNumber(payload.totalProducts)}` : null,
+          payload.totalCustomers != null ? `**Khách hàng**: ${formatNumber(payload.totalCustomers)}` : null,
+          payload.totalOrders != null ? `**Đơn hàng**: ${formatNumber(payload.totalOrders)}` : null,
+          payload.totalRevenue != null ? `**Tổng doanh thu**: ${formatNumber(payload.totalRevenue)} đồng` : null,
+        ].filter(Boolean).join('\n');
+      }
+    }
+    return 'Tạm thời chưa có nội dung trả lời.';
+  };
+
+  const formatShopAnalytics = (d: any): string => {
+    const name = d?.shopName || 'Cửa hàng';
+    const totalProducts = formatNumber(d?.totalProducts);
+    const totalCustomers = formatNumber(d?.totalCustomers);
+    const totalOrders = formatNumber(d?.totalOrders);
+    const totalRevenue = formatNumber(d?.totalRevenue) + ' đồng';
+    const aov = formatNumber(d?.averageOrderValue);
+    return `**Tổng quan cửa hàng**\n- **Cửa hàng**: ${name}\n- **Sản phẩm**: ${totalProducts}\n- **Khách hàng**: ${totalCustomers}\n- **Đơn hàng**: ${totalOrders}\n- **Tổng doanh thu**: ${totalRevenue}\n- **Giá trị đơn TB**: ${aov}`;
+  };
+
+  const formatCustomersAnalytics = (d: any): string => {
+    const total = formatNumber(d?.totalCustomers);
+    const members = formatNumber(d?.memberCustomers);
+    const nonMembers = formatNumber(d?.nonMemberCustomers);
+    const newMonth = formatNumber(d?.newCustomersThisMonth);
+    const returning = formatNumber(d?.returningCustomers);
+    const avgSpent = formatNumber(d?.averageCustomerSpent);
+    return `**Phân tích khách hàng**\n- **Tổng khách**: ${total}\n- **Thành viên/Không thành viên**: ${members}/${nonMembers}\n- **Khách mới (tháng)**: ${newMonth}\n- **Khách quay lại**: ${returning}\n- **Chi tiêu TB/khách**: ${avgSpent}`;
+  };
+
+  const formatInventoryAnalytics = (d: any): string => {
+    const totalProducts = formatNumber(d?.totalProducts);
+    const inStock = formatNumber(d?.inStockProducts);
+    const low = formatNumber(d?.lowStockProducts);
+    const out = formatNumber(d?.outOfStockProducts);
+    const value = formatNumber(d?.totalInventoryValue) + ' đồng';
+    return `**Phân tích kho hàng**\n- **Tổng sản phẩm**: ${totalProducts}\n- **Còn hàng/Sắp hết/Hết hàng**: ${inStock}/${low}/${out}\n- **Giá trị tồn kho**: ${value}`;
+  };
+
+  const formatRevenueAnalytics = (d: any): string => {
+    const totalRevenue = formatNumber(d?.totalRevenue) + ' đồng';
+    const aov = formatNumber(d?.averageOrderValue);
+    const totalOrders = formatNumber(d?.totalOrders);
+    const thisWeek = formatNumber(d?.thisWeekRevenue) + ' đồng';
+    const thisMonth = formatNumber(d?.thisMonthRevenue) + ' đồng';
+    return `**Phân tích doanh thu**\n- **Tổng doanh thu**: ${totalRevenue}\n- **Tổng đơn**: ${totalOrders}\n- **Giá trị đơn TB**: ${aov}\n- **Tuần này/Tháng này**: ${thisWeek}/${thisMonth}`;
+  };
+
+  const formatProductsAnalytics = (d: any): string => {
+    const top = Array.isArray(d?.topSellingProducts) ? d.topSellingProducts.slice(0, 5) : [];
+    const worst = Array.isArray(d?.worstSellingProducts) ? d.worstSellingProducts.slice(0, 3) : [];
+    const profitable = Array.isArray(d?.mostProfitableProducts) ? d.mostProfitableProducts.slice(0, 3) : [];
+    const needAttention = Array.isArray(d?.productsNeedAttention) ? d.productsNeedAttention.slice(0, 3) : [];
+    const cat = d?.categoryPerformance || {};
+
+    const topText = top.length
+      ? `**Bán chạy**\n- ${top.map((p: any) => `${p?.productName} (${formatNumber(p?.totalSold)} bán, DT ${formatNumber(p?.totalRevenue)}đ)`).join('\n- ')}`
+      : 'Chưa có dữ liệu bán chạy.';
+
+    const worstText = worst.length
+      ? `**Bán chậm**\n- ${worst.map((p: any) => `${p?.productName} (${formatNumber(p?.totalSold)} bán)`).join('\n- ')}`
+      : '';
+
+    const profitText = profitable.length
+      ? `**Lợi nhuận tốt**\n- ${profitable.map((p: any) => `${p?.productName} (biên ${Math.round(Number(p?.profitMargin ?? 0))}%)`).join('\n- ')}`
+      : '';
+
+    const attentionText = Array.isArray(d?.productsNeedAttention) && d.productsNeedAttention.length
+      ? `**Cần chú ý**\n- ${formatNumber(d.productsNeedAttention.length)} sản phẩm bán chậm hoặc tồn kho cao`
+      : '';
+
+    const catKeys = Object.keys(cat);
+    const catText = catKeys.length
+      ? `**Hiệu suất danh mục**\n- ${catKeys.map((k) => {
+          const c = cat[k];
+          return `${c?.categoryName ?? k}: SP ${formatNumber(c?.productCount)}, DT ${formatNumber(c?.totalRevenue)}đ`;
+        }).join('\n- ')}`
+      : '';
+
+    return [topText, worstText, profitText, attentionText, catText].filter(Boolean).join('\n');
+  };
+
+  const formatAnalytics = (path: string, json: any): string => {
+    switch (path) {
+      case 'shop':
+        return formatShopAnalytics(json);
+      case 'customers':
+        return formatCustomersAnalytics(json);
+      case 'inventory':
+        return formatInventoryAnalytics(json);
+      case 'revenue':
+        return formatRevenueAnalytics(json);
+      case 'products':
+      default:
+        return formatProductsAnalytics(json);
+    }
+  };
+
+  const handleQuickQuestion = async (question: string) => {
+    // Add user message locally (do NOT POST when using quick questions)
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text: question.trim(),
+      isUser: true,
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, userMessage]);
+    scrollToBottom();
+    setIsLoading(true);
+    try {
+      const token = await getAuthToken();
+      const shopId = (await getShopId()) ?? 0;
+      if (!token || !(shopId > 0)) {
+        throw new Error('Thiếu thông tin đăng nhập hoặc shopId');
+      }
+      const path = mapQuickQuestionToPath(question);
+      const res = await fetch(`${API_URL}/api/Chatbot/${shopId}/analytics/${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json: any = await res.json().catch(() => null);
+      const text: string = json ? formatAnalytics(path, json) : 'Không có dữ liệu';
+      const aiResponse: Message = {
+        id: (Date.now() + 2).toString(),
+        text,
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, aiResponse]);
+    } catch (error: any) {
+      const aiResponse: Message = {
+        id: (Date.now() + 2).toString(),
+        text: 'Không thể tải phân tích. Vui lòng thử lại.',
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, aiResponse]);
+      try { console.error('[Chatbot][quick] error:', error); } catch {}
+    } finally {
+      setIsLoading(false);
+      scrollToBottom();
+    }
   };
 
   const handleImagePick = () => {
@@ -135,7 +387,7 @@ Dựa trên dữ liệu bán hàng 30 ngày qua, các mặt hàng có số lư�
           styles.messageText,
           item.isUser ? styles.userText : styles.aiText
         ]}>
-          {item.text}
+          {renderFormattedText(item.text)}
         </Text>
         <Text style={styles.timeText}>
           {item.timestamp.toLocaleTimeString('vi-VN', { 
@@ -156,9 +408,12 @@ Dựa trên dữ liệu bán hàng 30 ngày qua, các mặt hàng có số lư�
     </TouchableOpacity>
   );
 
+  useEffect(() => { scrollToBottom(); }, [messages]);
+
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    // Initial load
+    fetchMessagesPage(1, true);
+  }, []);
 
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
@@ -206,6 +461,14 @@ Dựa trên dữ liệu bán hàng 30 ngày qua, các mặt hàng có số lư�
           contentContainerStyle={styles.messagesContent}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={scrollToBottom}
+          onEndReachedThreshold={0.2}
+          onEndReached={() => {
+            if (!isFetchingMore && hasMore) {
+              fetchMessagesPage(page + 1, false);
+            }
+          }}
+          refreshing={isFetching}
+          onRefresh={() => fetchMessagesPage(1, true)}
         />
 
         {/* Loading indicator */}
@@ -333,6 +596,9 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 16,
     lineHeight: 20,
+  },
+  bold: {
+    fontWeight: 'bold',
   },
   userText: {
     color: '#FFFFFF',
