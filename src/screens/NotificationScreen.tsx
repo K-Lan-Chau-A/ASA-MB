@@ -9,9 +9,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useInfiniteQuery } from '@tanstack/react-query';
-import { fetchNotifications, NotificationItem as NotificationDTO } from '../services/notifications';
-import { getShopId as loadShopId } from '../services/AuthStore';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { fetchNotifications, NotificationItem as NotificationDTO, markNotificationRead, markAllNotificationsRead } from '../services/notifications';
+import { getShopId as loadShopId, getUserId as loadUserId } from '../services/AuthStore';
 import { notificationsStore } from '../services/NotificationsStore';
 
 type RenderNotificationProps = {
@@ -20,16 +20,18 @@ type RenderNotificationProps = {
   title: string;
   description: string;
   time: string;
+  onPress?: () => void;
+  isRead?: boolean;
 };
 
-const NotificationItem = ({ icon, color, title, description, time }: RenderNotificationProps) => (
-  <TouchableOpacity style={styles.notificationItem}>
+const NotificationItem = ({ icon, color, title, description, time, onPress, isRead }: RenderNotificationProps) => (
+  <TouchableOpacity style={styles.notificationItem} onPress={onPress}>
     <View style={[styles.iconContainer, { backgroundColor: color }]}>
       <Icon name={icon} size={24} color="#FFFFFF" />
     </View>
     <View style={styles.notificationContent}>
-      <Text style={styles.notificationTitle}>{title}</Text>
-      <Text style={styles.notificationDescription}>{description}</Text>
+      <Text style={[styles.notificationTitle, !isRead ? styles.unreadText : undefined]}>{title}</Text>
+      <Text style={[styles.notificationDescription, !isRead ? styles.unreadText : undefined]}>{description}</Text>
       <Text style={styles.notificationTime}>{time}</Text>
     </View>
   </TouchableOpacity>
@@ -37,6 +39,7 @@ const NotificationItem = ({ icon, color, title, description, time }: RenderNotif
 
 const NotificationScreen = () => {
   const navigation = useNavigation();
+  const queryClient = useQueryClient();
 
   const handleBack = () => {
     navigation.goBack(); // Sử dụng goBack() để quay lại màn hình trước đó
@@ -44,11 +47,14 @@ const NotificationScreen = () => {
 
   const PAGE_SIZE = 10;
   const [shopId, setShopId] = useState<number | null>(null);
+  const [userId, setUserId] = useState<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    loadShopId().then((id) => {
-      if (mounted) setShopId(id);
+    Promise.all([loadShopId(), loadUserId()]).then(([sid, uid]) => {
+      if (!mounted) return;
+      setShopId(sid);
+      setUserId(uid);
     });
     return () => {
       mounted = false;
@@ -117,6 +123,21 @@ const NotificationScreen = () => {
     notificationsStore.setCount(unread);
   }, [flatData]);
 
+  const handlePressNotification = useCallback(async (item: NotificationDTO) => {
+    if (item.isRead) return;
+    // Optimistic: update cache
+    queryClient.setQueryData(['notifications', shopId], (oldData: any) => {
+      if (!oldData) return oldData;
+      const updatedPages = oldData.pages.map((p: any) => ({
+        ...p,
+        items: p.items.map((it: NotificationDTO) => it.notificationId === item.notificationId ? { ...it, isRead: true } : it),
+      }));
+      return { ...oldData, pages: updatedPages };
+    });
+    notificationsStore.inc(-1);
+    try { await markNotificationRead(item.notificationId); } catch {}
+  }, [queryClient, shopId]);
+
   const renderItem = useCallback(({ item }: { item: NotificationDTO }) => {
     const map = mapTypeToIconAndColor(item.type);
     return (
@@ -126,9 +147,11 @@ const NotificationScreen = () => {
         title={item.title}
         description={item.content}
         time={formatRelativeTime(item.createdAt)}
+        onPress={() => handlePressNotification(item)}
+        isRead={item.isRead}
       />
     );
-  }, [mapTypeToIconAndColor, formatRelativeTime]);
+  }, [mapTypeToIconAndColor, formatRelativeTime, handlePressNotification]);
 
   const keyExtractor = useCallback((item: NotificationDTO) => String(item.notificationId), []);
 
@@ -138,6 +161,21 @@ const NotificationScreen = () => {
     }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+  const onMarkAllRead = useCallback(async () => {
+    if (!(userId && userId > 0)) return;
+    // Optimistic
+    queryClient.setQueryData(['notifications', shopId], (oldData: any) => {
+      if (!oldData) return oldData;
+      const updatedPages = oldData.pages.map((p: any) => ({
+        ...p,
+        items: p.items.map((it: NotificationDTO) => ({ ...it, isRead: true })),
+      }));
+      return { ...oldData, pages: updatedPages };
+    });
+    notificationsStore.setCount(0);
+    try { await markAllNotificationsRead(userId); } catch {}
+  }, [queryClient, shopId, userId]);
+
   return (
     <SafeAreaView style={styles.container} edges={['top','bottom','left','right']}>
       <View style={styles.header}>
@@ -145,6 +183,9 @@ const NotificationScreen = () => {
           <Icon name="chevron-left" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Thông báo</Text>
+        <TouchableOpacity style={styles.markAllBtn} onPress={onMarkAllRead}>
+          <Text style={styles.markAllText}>Đánh dấu đã đọc tất cả</Text>
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -197,6 +238,18 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+    flex: 1,
+  },
+  markAllBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: '#E0F2F1',
+    borderRadius: 6,
+  },
+  markAllText: {
+    color: '#00796B',
+    fontSize: 12,
+    fontWeight: '600',
   },
   content: {
     flex: 1,
@@ -226,7 +279,7 @@ const styles = StyleSheet.create({
   },
   notificationTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: 'normal',
     marginBottom: 4,
   },
   notificationDescription: {
@@ -237,6 +290,10 @@ const styles = StyleSheet.create({
   notificationTime: {
     fontSize: 12,
     color: '#999999',
+  },
+  unreadText: {
+    fontWeight: 'bold',
+    color: '#212121',
   },
 });
 

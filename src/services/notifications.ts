@@ -1,4 +1,5 @@
 import API_URL from '../config/api';
+import { getAuthToken } from './AuthStore';
 
 export type NotificationItem = {
   notificationId: number;
@@ -35,6 +36,46 @@ export async function fetchNotifications(params: {
     throw new Error(`Failed to fetch notifications: ${response.status} ${text}`);
   }
   return (await response.json()) as NotificationsResponse;
+}
+
+
+// Mark a single notification as read
+export async function markNotificationRead(notificationId: number): Promise<boolean> {
+  const token = await getAuthToken();
+  const res = await fetch(`${API_URL}/api/notifications/${encodeURIComponent(notificationId)}/read`, {
+    method: 'PUT',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!res.ok) return false;
+  try {
+    const json = await res.json();
+    const dataField = (json && json.data) ?? json;
+    return Boolean((json && json.success) ?? dataField === true);
+  } catch {
+    // Some backends may return empty body for 200 OK
+    return true;
+  }
+}
+
+// Mark all notifications as read for a given user
+export async function markAllNotificationsRead(userId: number): Promise<boolean> {
+  const token = await getAuthToken();
+  const res = await fetch(`${API_URL}/api/notifications/users/${encodeURIComponent(userId)}/read-all`, {
+    method: 'PUT',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!res.ok) return false;
+  try {
+    const json = await res.json();
+    const dataField = (json && json.data) ?? json;
+    return Boolean((json && json.success) ?? dataField === true);
+  } catch {
+    return true;
+  }
 }
 
 
