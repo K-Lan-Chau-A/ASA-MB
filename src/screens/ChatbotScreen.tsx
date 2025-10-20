@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import API_URL from '../config/api';
 import { getAuthToken, getShopId, getUserId } from '../services/AuthStore';
 
@@ -27,14 +28,7 @@ interface Message {
 
 const ChatbotScreen = () => {
   const navigation = useNavigation();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      text: 'Chào bạn! Tôi có thể giúp bạn phân tích dữ liệu bán hàng, quản lý kho và nhiều vấn đề khác. Bạn cần hỗ trợ gì?',
-      isUser: false,
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
@@ -44,6 +38,34 @@ const ChatbotScreen = () => {
   const [hasMore, setHasMore] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const flatListRef = useRef<FlatList<Message>>(null);
+
+  // Cache functions
+  const CACHE_KEY = 'chatbot_messages';
+  
+  const saveMessagesToCache = async (messages: Message[]) => {
+    try {
+      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(messages));
+    } catch (error) {
+      console.error('Error saving messages to cache:', error);
+    }
+  };
+
+  const loadMessagesFromCache = async (): Promise<Message[]> => {
+    try {
+      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        // Convert timestamp strings back to Date objects
+        return parsed.map((msg: any) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        }));
+      }
+    } catch (error) {
+      console.error('Error loading messages from cache:', error);
+    }
+    return [];
+  };
 
   const quickQuestions = [
     'Phân tích cửa hàng',
@@ -80,6 +102,18 @@ const ChatbotScreen = () => {
   const fetchMessagesPage = async (targetPage: number, replace: boolean) => {
     try {
       if (replace) { setIsFetching(true); } else { setIsFetchingMore(true); }
+      
+      // Load from cache first if replacing (initial load)
+      if (replace) {
+        const cachedMessages = await loadMessagesFromCache();
+        if (cachedMessages.length > 0) {
+          setMessages(cachedMessages);
+          setIsFetching(false);
+          scrollToBottom();
+          return;
+        }
+      }
+      
       const token = await getAuthToken();
       const shopId = (await getShopId()) ?? 0;
       if (!token || !(shopId > 0)) return;
@@ -101,6 +135,12 @@ const ChatbotScreen = () => {
         return merged;
       });
 
+      // Save to cache
+      if (replace) {
+        const finalMessages = mapped;
+        await saveMessagesToCache(finalMessages);
+      }
+
       setHasMore(mapped.length >= pageSize);
       setPage(targetPage);
       if (replace) scrollToBottom();
@@ -119,7 +159,11 @@ const ChatbotScreen = () => {
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => {
+      const newMessages = [...prev, userMessage];
+      saveMessagesToCache(newMessages);
+      return newMessages;
+    });
     setInputText('');
     setIsLoading(true);
     scrollToBottom();
@@ -158,7 +202,11 @@ const ChatbotScreen = () => {
         isUser: false,
         timestamp: new Date(),
       };
-      setMessages(prev => [...prev, aiResponse]);
+      setMessages(prev => {
+        const newMessages = [...prev, aiResponse];
+        saveMessagesToCache(newMessages);
+        return newMessages;
+      });
     } catch (error: any) {
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
@@ -166,7 +214,11 @@ const ChatbotScreen = () => {
         isUser: false,
         timestamp: new Date(),
       };
-      setMessages(prev => [...prev, aiResponse]);
+      setMessages(prev => {
+        const newMessages = [...prev, aiResponse];
+        saveMessagesToCache(newMessages);
+        return newMessages;
+      });
       try { console.error('[Chatbot][sendMessage] error:', error); } catch {}
     } finally {
       setIsLoading(false);
@@ -329,7 +381,11 @@ const ChatbotScreen = () => {
       isUser: true,
       timestamp: new Date(),
     };
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => {
+      const newMessages = [...prev, userMessage];
+      saveMessagesToCache(newMessages);
+      return newMessages;
+    });
     scrollToBottom();
     setIsLoading(true);
     try {
@@ -350,7 +406,11 @@ const ChatbotScreen = () => {
         isUser: false,
         timestamp: new Date(),
       };
-      setMessages(prev => [...prev, aiResponse]);
+      setMessages(prev => {
+        const newMessages = [...prev, aiResponse];
+        saveMessagesToCache(newMessages);
+        return newMessages;
+      });
     } catch (error: any) {
       const aiResponse: Message = {
         id: (Date.now() + 2).toString(),
@@ -358,7 +418,11 @@ const ChatbotScreen = () => {
         isUser: false,
         timestamp: new Date(),
       };
-      setMessages(prev => [...prev, aiResponse]);
+      setMessages(prev => {
+        const newMessages = [...prev, aiResponse];
+        saveMessagesToCache(newMessages);
+        return newMessages;
+      });
       try { console.error('[Chatbot][quick] error:', error); } catch {}
     } finally {
       setIsLoading(false);
@@ -411,8 +475,17 @@ const ChatbotScreen = () => {
   useEffect(() => { scrollToBottom(); }, [messages]);
 
   useEffect(() => {
-    // Initial load
-    fetchMessagesPage(1, true);
+    // Load cached messages first, then fetch from server if needed
+    const loadInitialMessages = async () => {
+      const cachedMessages = await loadMessagesFromCache();
+      if (cachedMessages.length > 0) {
+        setMessages(cachedMessages);
+        scrollToBottom();
+      }
+      // Still fetch from server to get latest messages
+      fetchMessagesPage(1, true);
+    };
+    loadInitialMessages();
   }, []);
 
   useEffect(() => {

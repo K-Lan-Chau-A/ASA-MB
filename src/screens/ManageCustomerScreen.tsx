@@ -34,22 +34,7 @@ const ManageCustomerScreen = () => {
   const [birthday, setBirthday] = useState(''); // YYYY-MM-DD
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const getRankColor = useCallback((rankid?: string): string => {
-    switch (String(rankid ?? '').trim()) {
-      case '1':
-        return '#B87333'; // Bronze
-      case '2':
-        return '#C0C0C0'; // Silver
-      case '3':
-        return '#FFD700'; // Gold
-      case '4':
-        return '#00B5AD'; // Platinum
-      case '5':
-        return '#00BFFF'; // Diamond
-      default:
-        return '#E5E5E5';
-    }
-  }, []);
+  // Rank color logic removed: rank names will be rendered in default text color
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -126,13 +111,12 @@ const ManageCustomerScreen = () => {
   }, [fullName, phone, email, gender, birthday, fetchAccounts]);
 
   const renderItem = ({ item }: { item: AccountItem }) => {
-    const borderColor = getRankColor(item.rankid);
     return (
       <View style={styles.row}> 
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <Text style={styles.name}>{item.fullName}</Text>
-            {!!item.rankName && <Text style={[styles.rankBadge, { color: borderColor }]}>{item.rankName}</Text>}
+            {!!item.rankName && <Text style={styles.rankBadge}>{item.rankName}</Text>}
           </View>
           <View style={styles.subRow}>
             {!!item.phone && (

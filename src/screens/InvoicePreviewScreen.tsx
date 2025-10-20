@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navig
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
 import { clearGlobalOrderState } from './OrderScreen';
+import { getShopInfo } from '../services/AuthStore';
 
 interface Product {
   id: string;
@@ -45,6 +46,19 @@ const InvoicePreviewScreen = () => {
   const customerPhone = (invoiceData as any)?.customerPhone || (route.params as any)?.customer?.phone || '';
   const customerEmail = (invoiceData as any)?.customerEmail || (route.params as any)?.customer?.email || '';
   const [copyCount, setCopyCount] = useState(1);
+
+  const [shopName, setShopName] = useState<string>('Cửa hàng');
+  const [shopAddress, setShopAddress] = useState<string>('');
+
+  useEffect(() => {
+    let mounted = true;
+    getShopInfo().then((info) => {
+      if (!mounted) return;
+      if (info?.shopName) setShopName(String(info.shopName));
+      if (info?.shopAddress) setShopAddress(String(info.shopAddress));
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
 
   const formatCurrency = (amount: number) => {
     return amount.toLocaleString('vi-VN') + '₫';
@@ -149,9 +163,8 @@ const InvoicePreviewScreen = () => {
         <View style={styles.invoice}>
           {/* Store Information */}
           <View style={styles.storeInfo}>
-            <Text style={styles.storeName}>Cửa hàng XYZ</Text>
-            <Text style={styles.storeAddress}>Địa chỉ: 123 JQK, phường Long Thạnh Mỹ, TP. Thủ Đức</Text>
-            <Text style={styles.storePhone}>Điện thoại: 0123456789</Text>
+            <Text style={styles.storeName}>{shopName || 'Cửa hàng'}</Text>
+            <Text style={styles.storeAddress}>{shopAddress ? `Địa chỉ: ${shopAddress}` : 'Địa chỉ: ...'}</Text>
           </View>
 
           {/* Invoice Header */}

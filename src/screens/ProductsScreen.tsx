@@ -173,6 +173,13 @@ const ProductsScreen = () => {
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
 
+  // Pagination state
+  const PAGE_SIZE = 10;
+  const [page, setPage] = useState<number>(1);
+  const [hasNext, setHasNext] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [initialLoaded, setInitialLoaded] = useState<boolean>(false);
+
   // Get category names for display
   const categoryNames = useMemo(() => {
     return ['Tất cả', ...categories.map(cat => cat.categoryName)];
@@ -281,86 +288,99 @@ const ProductsScreen = () => {
           }
         } catch {}
       }
-      const url = `${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=100`;
-      const res = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      const data = await res.json();
-      const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-      
-      console.log('📦 Products API response:', data);
-      console.log('📦 Products items:', items);
-      
-      // Debug: Check first product's category data
-      if (items.length > 0) {
-        console.log('📦 First product sample:', items[0]);
-        console.log('📦 Product categoryId:', items[0]?.categoryId);
-        console.log('📦 Product categoryName:', items[0]?.categoryName);
-      }
-      
-      let mapped: Product[] = items.map((p: any, idx: number) => ({
-        id: String(p.id ?? p.productId ?? idx + 1),
-        name: String(p.productName ?? p.name ?? 'Sản phẩm'),
-        price: Number(p.price ?? p.defaultPrice ?? 0),
-        barcode: p.barcode ? String(p.barcode) : undefined,
-        categoryId: typeof p.categoryId === 'number' ? p.categoryId : undefined,
-        categoryName: p.categoryName ? String(p.categoryName) : 'Chưa phân loại',
-        quantity: typeof p.quantity === 'number' ? p.quantity : (typeof p.stock === 'number' ? p.stock : undefined),
-        lastUpdated: p.updateAt ? String(p.updateAt).slice(0, 10) : (p.updatedAt ? String(p.updatedAt).slice(0,10) : undefined),
-        imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
-        units: [],
-        selectedUnit: 'Cái',
-      }));
-
-      // Enrich units by calling product-units per product (base unit has conversionFactor=1)
-      try {
-        const enriched = await Promise.all(
-          mapped.map(async (prod) => {
-            try {
-              const uRes = await fetch(`${API_URL}/api/product-units?ShopId=${shopId}&ProductId=${prod.id}&page=1&pageSize=50`, {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-              });
-              const uData = await uRes.json();
-              const arr: any[] = Array.isArray(uData?.items) ? uData.items : [];
-              if (arr.length > 0) {
-                let units = arr.map((u: any) => ({
-                  unitName: String(u.unitName ?? u.name ?? 'Cái'),
-                  price: Number(u.price ?? prod.price ?? 0),
-                  quantityInBaseUnit: Number(u.conversionFactor ?? 1),
-                  isBaseUnit: Number(u.conversionFactor ?? 1) === 1,
-                })).sort((a: any, b: any) => (a.quantityInBaseUnit || 1) - (b.quantityInBaseUnit || 1));
-                const baseIdx = units.findIndex((u: any) => u.isBaseUnit);
-                const base = baseIdx >= 0 ? units[baseIdx] : units[0];
-                // Trust products API price as the source of truth for base unit.
-                // If it differs from units API, override base unit price to keep UI consistent.
-                if (typeof prod.price === 'number' && prod.price > 0) {
-                  units = units.map((u: any, idx: number) => idx === (baseIdx >= 0 ? baseIdx : 0) ? { ...u, price: prod.price } : u);
-                }
-                const finalBase = baseIdx >= 0 ? units[baseIdx] : units[0];
-                return { ...prod, units, price: finalBase.price, selectedUnit: finalBase.unitName };
-              }
-            } catch {}
-            // fallback keep original price and selectedUnit
-            return { ...prod, units: [{ unitName: 'Cái', price: prod.price, quantityInBaseUnit: 1, isBaseUnit: true }], selectedUnit: 'Cái' };
-          })
-        );
-        mapped = enriched;
-      } catch {}
-
-      setProducts(mapped);
-
-      // Save fresh cache (overwrite any previous data)
-      try {
-        if (shopId > 0) {
-          const cachePayload = JSON.stringify({ ts: Date.now(), items: mapped });
-          await AsyncStorage.setItem(cacheKey, cachePayload);
-        }
-      } catch {}
+      // Fallback: load first page quickly
+      await loadPage(1, PAGE_SIZE, false, token, shopId);
+      setInitialLoaded(true);
+      // Background prefetch all pages for later fast sort/filter
+      prefetchAllProducts(token, shopId).catch(() => {});
     } catch (e) {
       // ignore
     } finally {
       if (showLoader) setIsLoading(false);
     }
+  }, []);
+
+  // Generic loader for a page
+  const loadPage = useCallback(async (targetPage: number, pageSize: number, append: boolean, token?: string | null, shopIdArg?: number) => {
+    const shopId = shopIdArg ?? ((await getShopId()) ?? 0);
+    const auth = token ?? (await getAuthToken());
+    if (shopId <= 0) return;
+    const url = `${API_URL}/api/products?ShopId=${shopId}&page=${targetPage}&pageSize=${pageSize}`;
+    const res = await fetch(url, { headers: auth ? { Authorization: `Bearer ${auth}` } : undefined });
+    const data = await res.json().catch(() => ({} as any));
+    const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+    const totalPages: number = Number(data?.totalPages ?? data?.data?.totalPages ?? 0) || 0;
+
+    let mapped: Product[] = items.map((p: any, idx: number) => ({
+      id: String(p.id ?? p.productId ?? `${targetPage}-${idx + 1}`),
+      name: String(p.productName ?? p.name ?? 'Sản phẩm'),
+      price: Number(p.price ?? p.defaultPrice ?? 0),
+      barcode: p.barcode ? String(p.barcode) : undefined,
+      categoryId: typeof p.categoryId === 'number' ? p.categoryId : undefined,
+      categoryName: p.categoryName ? String(p.categoryName) : 'Chưa phân loại',
+      quantity: typeof p.quantity === 'number' ? p.quantity : (typeof p.stock === 'number' ? p.stock : undefined),
+      lastUpdated: p.updateAt ? String(p.updateAt).slice(0, 10) : (p.updatedAt ? String(p.updatedAt).slice(0,10) : undefined),
+      imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
+      units: [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true }],
+      selectedUnit: 'Cái',
+    }));
+
+    setProducts(prev => (append ? [...prev, ...mapped] : mapped));
+
+    // hasNext: based on totalPages if available, or length==pageSize heuristic
+    const more = totalPages ? targetPage < totalPages : (items.length === pageSize);
+    setHasNext(more);
+    setPage(targetPage);
+
+    // Cache incrementally (append case merge)
+    try {
+      const cacheKey = `products:${shopId}:v2`;
+      const existingRaw = await AsyncStorage.getItem(cacheKey);
+      let merged: Product[] = append && existingRaw ? (JSON.parse(existingRaw)?.items || []) : (append ? [] : []);
+      if (append && existingRaw) {
+        merged = (JSON.parse(existingRaw)?.items || []) as Product[];
+      }
+      const finalItems = append ? [...merged, ...mapped] : mapped;
+      await AsyncStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), items: finalItems }));
+    } catch {}
+  }, []);
+
+  // Background prefetch all products to cache (does not change UI)
+  const prefetchAllProducts = useCallback(async (token?: string | null, shopIdArg?: number) => {
+    try {
+      const shopId = shopIdArg ?? ((await getShopId()) ?? 0);
+      const auth = token ?? (await getAuthToken());
+      if (shopId <= 0) return;
+      const pageSize = 100;
+      let p = 1;
+      let all: Product[] = [];
+      while (true) {
+        const url = `${API_URL}/api/products?ShopId=${shopId}&page=${p}&pageSize=${pageSize}`;
+        const res = await fetch(url, { headers: auth ? { Authorization: `Bearer ${auth}` } : undefined });
+        const data = await res.json().catch(() => ({} as any));
+        const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+        const chunk: Product[] = items.map((p: any, idx: number) => ({
+          id: String(p.id ?? p.productId ?? `${p}-${idx}`),
+          name: String(p.productName ?? p.name ?? 'Sản phẩm'),
+          price: Number(p.price ?? p.defaultPrice ?? 0),
+          barcode: p.barcode ? String(p.barcode) : undefined,
+          categoryId: typeof p.categoryId === 'number' ? p.categoryId : undefined,
+          categoryName: p.categoryName ? String(p.categoryName) : 'Chưa phân loại',
+          quantity: typeof p.quantity === 'number' ? p.quantity : (typeof p.stock === 'number' ? p.stock : undefined),
+          lastUpdated: p.updateAt ? String(p.updateAt).slice(0, 10) : (p.updatedAt ? String(p.updatedAt).slice(0,10) : undefined),
+          imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
+          units: [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true }],
+          selectedUnit: 'Cái',
+        }));
+        all = [...all, ...chunk];
+        const totalPages: number = Number(data?.totalPages ?? data?.data?.totalPages ?? 0) || 0;
+        const more = totalPages ? p < totalPages : (items.length === pageSize);
+        if (!more) break;
+        p += 1;
+      }
+      const cacheKey = `products:${shopId}:v2`;
+      await AsyncStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), items: all }));
+    } catch {}
   }, []);
 
   // Note: Products already have categoryName from API, no need for enrichment
@@ -373,15 +393,15 @@ const ProductsScreen = () => {
   }, [loadCategories]);
 
   useEffect(() => {
-    if (queriedProducts && Array.isArray(queriedProducts)) {
-      setProducts(queriedProducts as any);
-    }
-  }, [queriedProducts]);
+    // Fast first page
+    loadProducts(true, false);
+  }, [loadProducts]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadCategories();
-    await loadProducts(false, true); // force refresh
+    setPage(1); setHasNext(true); setInitialLoaded(false);
+    await loadProducts(false, true); // force refresh -> will reload first page and prefetch
     setRefreshing(false);
   }, [loadCategories, loadProducts]);
 
@@ -564,6 +584,13 @@ const ProductsScreen = () => {
                 scrollEventThrottle={16}
                 refreshing={refreshing}
                 onRefresh={onRefresh}
+                onEndReachedThreshold={0.4}
+                onEndReached={async () => {
+                  if (!initialLoaded || !hasNext || loadingMore) return;
+                  setLoadingMore(true);
+                  try { await loadPage(page + 1, PAGE_SIZE, true); setPage(prev => prev + 1); } catch {}
+                  setLoadingMore(false);
+                }}
                 contentContainerStyle={[styles.productListContent, { paddingBottom: isKeyboardVisible ? 0 : (insets.bottom || 0) }]}
               />
             )}

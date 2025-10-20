@@ -85,25 +85,14 @@ const formatPercentage = (value: number): string => {
 };
 
 const RankItem = ({ item, onDelete, onEdit }: { item: Rank; onDelete: (rankId: number) => void; onEdit: (item: Rank) => void }) => {
-  const getRankColor = (rankName: string): string => {
-    switch (rankName.toLowerCase()) {
-      case 'đồng': return '#B87333';
-      case 'bạc': return '#C0C0C0';
-      case 'vàng': return '#FFD700';
-      case 'bạch kim': return '#00B5AD';
-      case 'kim cương': return '#00BFFF';
-      default: return '#E5E5E5';
-    }
-  };
-
-  const color = getRankColor(item.rankName);
+  // Rank color logic removed: rank names will be rendered in default text color
 
   return (
     <TouchableOpacity style={styles.rankItem}>
       <View style={styles.rankContent}>
         <View style={styles.rankHeader}>
           <View style={styles.rankInfo}>
-            <Text style={[styles.rankName, { color }]}>{item.rankName}</Text>
+            <Text style={styles.rankName}>{item.rankName}</Text>
             <Text style={styles.rankBadge}>{formatPercentage(item.benefit)} chiết khấu</Text>
           </View>
           <View style={styles.actionButtons}>

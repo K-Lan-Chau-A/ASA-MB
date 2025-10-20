@@ -25,23 +25,7 @@ const CustomerScreen = () => {
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
 
-  const getRankColor = useCallback((rankid?: string): string => {
-    // 1: Đồng (Bronze), 2: Bạc (Silver), 3: Vàng (Gold), 4: Bạch Kim (Platinum), 5: Kim Cương (Diamond)
-    switch (String(rankid ?? '').trim()) {
-      case '1': // Bronze
-        return '#B87333';
-      case '2': // Silver
-        return '#C0C0C0';
-      case '3': // Gold
-        return '#FFD700';
-      case '4': // Platinum
-        return '#00B5AD';
-      case '5': // Diamond
-        return '#00BFFF';
-      default:
-        return '#E5E5E5';
-    }
-  }, []);
+  // Rank color logic removed: rank names will be rendered in default text color
 
   const fetchCustomers = useCallback(async () => {
     try {
@@ -92,7 +76,6 @@ const CustomerScreen = () => {
   }, [customers, query]);
 
   const renderItem = ({ item }: { item: CustomerItem }) => {
-    const borderColor = getRankColor(item.rankid);
     const genderText = typeof item.gender === 'number' ? (item.gender === 1 ? 'Nam' : 'Nữ') : undefined;
     return (
       <TouchableOpacity
@@ -120,7 +103,7 @@ const CustomerScreen = () => {
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <Text style={styles.name}>{item.fullName || 'Khách lẻ'}</Text>
-            {!!item.rankName && <Text style={[styles.rankBadge, { color: borderColor }]}>{item.rankName}</Text>}
+            {!!item.rankName && <Text style={styles.rankBadge}>{item.rankName}</Text>}
           </View>
           <View style={styles.subRow}>
             {!!genderText && (

@@ -10,11 +10,13 @@ import {
   Image,
   Modal,
   ActivityIndicator,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset, ImageLibraryOptions, CameraOptions, launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RootStackParamList } from '../types/navigation';
 import API_URL from '../config/api';
 import { getShopId, getAuthToken } from '../services/AuthStore';
@@ -37,6 +39,21 @@ interface NewProduct {
 type Category = {
   categoryId: number;
   categoryName: string;
+};
+
+type Product = {
+  productId: number;
+  productName: string;
+  barcode: string;
+  categoryName: string;
+  price: number;
+  productImageURL?: string;
+  units?: Array<{
+    unitName: string;
+    conversionFactor: number;
+    price: number;
+    isBaseUnit: boolean;
+  }>;
 };
 
 const units = [
@@ -76,6 +93,13 @@ const AddProductScreen = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
+  
+  // Product search states
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+  const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [productSearchText, setProductSearchText] = useState('');
   const [showUnitDropdown, setShowUnitDropdown] = useState(false);
   const [baseUnit, setBaseUnit] = useState(route.params?.product?.units?.find?.((u: any)=>u.isBaseUnit)?.unitName || '');
 const [additionalUnits, setAdditionalUnits] = useState<Array<{ unitName: string; conversionRate: number; unitPrice?: string }>>(
@@ -101,6 +125,13 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
       setProduct(prev => ({ ...prev, barcode: scanned.trim() }));
     }
   }, [route.params?.barcode]);
+
+  // Sync productSearchText with product.name
+  useEffect(() => {
+    if (product.name && product.name !== productSearchText) {
+      setProductSearchText(product.name);
+    }
+  }, [product.name]);
 
   const updateProduct = useCallback((field: keyof NewProduct, value: string) => {
     setProduct(prev => ({ ...prev, [field]: value }));
@@ -284,6 +315,63 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
     fetchAll();
   }, []);
 
+  // Cache helpers for all products
+  const PRODUCTS_CACHE_KEY = 'all_products_cache_v1';
+  const loadProductsFromCache = useCallback(async (): Promise<Product[]> => {
+    try {
+      const raw = await AsyncStorage.getItem(PRODUCTS_CACHE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed as Product[];
+      return [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const saveProductsToCache = useCallback(async (products: Product[]) => {
+    try { await AsyncStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(products)); } catch {}
+  }, []);
+
+  // Fetch all products for search
+  useEffect(() => {
+    const fetchAllProducts = async () => {
+      if (!shopId) return;
+      setLoadingProducts(true);
+      try {
+        // 1) Try cache first for instant UX
+        const cached = await loadProductsFromCache();
+        if (cached.length > 0) {
+          setAllProducts(cached);
+        }
+        // 2) Fetch fresh from server in background
+        const token = await getAuthToken();
+        const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=1000`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        const data = await res.json();
+        const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+        const products: Product[] = items.map((item: any) => ({
+          productId: item.productId || item.id,
+          productName: item.productName || item.name,
+          barcode: item.barcode || '',
+          categoryName: item.categoryName || '',
+          price: item.price || 0,
+          productImageURL: item.productImageURL || item.imageUrl,
+          units: item.units || []
+        }));
+        setAllProducts(products);
+        saveProductsToCache(products);
+        try { console.log('[AddProductScreen] Loaded products:', products.length, products[0] ? { id: products[0].productId, name: products[0].productName } : null); } catch {}
+      } catch (e) {
+        console.error('Error fetching products:', e);
+      } finally {
+        setLoadingProducts(false);
+      }
+    };
+    fetchAllProducts();
+  }, [shopId, loadProductsFromCache, saveProductsToCache]);
+
   // If user enters/scans a barcode that already exists, prefill fields (except quantity and invoice image)
   useEffect(() => {
     let active = true;
@@ -435,6 +523,51 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
       setIsCreatingCategory(false);
     }
   }, [newCategoryName, newCategoryDesc, shopId, categories, updateProduct]);
+
+  // Handle product search
+  const handleProductSearch = useCallback((text: string) => {
+    setProductSearchText(text);
+    updateProduct('name', text);
+    
+    if (text.trim().length > 0) {
+      const filtered = allProducts.filter(product => 
+        product.productName.toLowerCase().includes(text.toLowerCase())
+      );
+      setFilteredProducts(filtered);
+      setShowProductDropdown(true);
+    } else {
+      setShowProductDropdown(false);
+      setFilteredProducts([]);
+    }
+  }, [allProducts, updateProduct]);
+
+  // Handle product selection
+  const handleProductSelect = useCallback((selectedProduct: Product) => {
+    setProductSearchText(selectedProduct.productName);
+    updateProduct('name', selectedProduct.productName);
+    updateProduct('barcode', selectedProduct.barcode);
+    updateProduct('category', selectedProduct.categoryName);
+    updateProduct('sellPrice', String(selectedProduct.price));
+    updateProduct('image', selectedProduct.productImageURL || '');
+    setShowProductDropdown(false);
+    
+    // Load product units if available
+    if (selectedProduct.units && selectedProduct.units.length > 0) {
+      const baseUnit = selectedProduct.units.find(u => u.isBaseUnit);
+      if (baseUnit) {
+        setBaseUnit(baseUnit.unitName);
+      }
+      
+      const additionalUnits = selectedProduct.units
+        .filter(u => !u.isBaseUnit)
+        .map(u => ({
+          unitName: u.unitName,
+          conversionRate: u.conversionFactor,
+          unitPrice: String(u.price)
+        }));
+      setAdditionalUnits(additionalUnits);
+    }
+  }, [updateProduct]);
 
   const handleScanBarcode = useCallback(() => {
     // Điều hướng tới màn hình quét mã, giống OrderScreen
@@ -699,12 +832,52 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
           {/* Product Name */}
           <View style={styles.fieldContainer}>
             <Text style={styles.label}>Tên sản phẩm <Text style={styles.requiredStar}>*</Text></Text>
-            <TextInput
-              style={styles.input}
-              value={product.name}
-              onChangeText={(text) => updateProduct('name', text)}
-              placeholder="Nhập tên sản phẩm"
-            />
+            <View style={styles.searchContainer}>
+              <TextInput
+                style={styles.searchInput}
+                value={productSearchText}
+                onChangeText={handleProductSearch}
+                placeholder="Nhập tên sản phẩm hoặc tìm kiếm"
+                onFocus={() => {
+                  if (productSearchText.trim().length > 0) {
+                    setShowProductDropdown(true);
+                  }
+                }}
+              />
+              <Icon name="magnify" size={20} color="#666" style={styles.searchIcon} />
+            </View>
+            
+            {showProductDropdown && (
+              <View style={styles.productDropdown}>
+                {loadingProducts && (
+                  <View style={{ padding: 12 }}>
+                    <Text style={{ color: '#666' }}>Đang tải sản phẩm...</Text>
+                  </View>
+                )}
+                {!loadingProducts && filteredProducts.length > 0 && (
+                  <ScrollView style={{ maxHeight: 200 }} showsVerticalScrollIndicator nestedScrollEnabled keyboardShouldPersistTaps="always" scrollEventThrottle={16}>
+                    {filteredProducts.map((item) => (
+                      <TouchableOpacity
+                        key={item.productId}
+                        style={styles.productDropdownItem}
+                        onPress={() => handleProductSelect(item)}
+                      >
+                        <View style={styles.productItemContent}>
+                          <Text style={styles.productItemName}>{item.productName}</Text>
+                          <Text style={styles.productItemCategory}>{item.categoryName}</Text>
+                          <Text style={styles.productItemPrice}>{item.price.toLocaleString('vi-VN')}đ</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+                {!loadingProducts && filteredProducts.length === 0 && productSearchText.trim().length > 0 && (
+                  <View style={{ padding: 12 }}>
+                    <Text style={{ color: '#666' }}>Không tìm thấy sản phẩm</Text>
+                  </View>
+                )}
+              </View>
+            )}
           </View>
 
           {/* Category */}
@@ -730,26 +903,30 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
                     <Text style={{ color: '#666' }}>Đang tải nhóm hàng...</Text>
                   </View>
                 )}
-                {!loadingCategories && categories.map((category) => (
-                  <TouchableOpacity
-                    key={category.categoryId}
-                    style={[
-                      styles.dropdownItem,
-                      product.category === category.categoryName && styles.dropdownItemSelected
-                    ]}
-                    onPress={() => {
-                      updateProduct('category', category.categoryName);
-                      setShowCategoryDropdown(false);
-                    }}
-                  >
-                    <Text style={[
-                      styles.dropdownItemText,
-                      product.category === category.categoryName && styles.dropdownItemTextSelected
-                    ]}>
-                      {category.categoryName}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {!loadingCategories && categories.length > 0 && (
+                  <ScrollView style={{ maxHeight: 200 }} showsVerticalScrollIndicator nestedScrollEnabled keyboardShouldPersistTaps="always" scrollEventThrottle={16}>
+                    {categories.map((item) => (
+                      <TouchableOpacity
+                        key={item.categoryId}
+                        style={[
+                          styles.dropdownItem,
+                          product.category === item.categoryName && styles.dropdownItemSelected
+                        ]}
+                        onPress={() => {
+                          updateProduct('category', item.categoryName);
+                          setShowCategoryDropdown(false);
+                        }}
+                      >
+                        <Text style={[
+                          styles.dropdownItemText,
+                          product.category === item.categoryName && styles.dropdownItemTextSelected
+                        ]}>
+                          {item.categoryName}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
                 {!!categoryError && (
                   <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
                     <Text style={{ color: '#E53935' }}>{categoryError}</Text>
@@ -1109,6 +1286,65 @@ const styles = StyleSheet.create({
     elevation: 5,
     zIndex: 1000,
     maxHeight: 200,
+  },
+  searchContainer: {
+    position: 'relative',
+  },
+  searchInput: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    padding: 12,
+    paddingRight: 40,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  searchIcon: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+  },
+  productDropdown: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 1000,
+    maxHeight: 200,
+  },
+  productDropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  productItemContent: {
+    flex: 1,
+  },
+  productItemName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 2,
+  },
+  productItemCategory: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 2,
+  },
+  productItemPrice: {
+    fontSize: 12,
+    color: '#009DA5',
+    fontWeight: '500',
   },
   dropdownItem: {
     paddingHorizontal: 12,

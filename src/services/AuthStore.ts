@@ -13,6 +13,9 @@ export type AuthData = {
   createdAt?: string;
   // optional list of feature ids this user has access to
   featureIds?: number[];
+  // cached shop info for convenience
+  shopName?: string | null;
+  shopAddress?: string | null;
 };
 
 const STORAGE_KEY = 'auth:data:v1';
@@ -26,6 +29,15 @@ export const authStore = {
       // Debug log to verify saved identifiers
       // Do not log accessToken value
       console.log('[AuthStore][save] userId:', data?.userId, 'shopId:', data?.shopId, 'shiftId:', (data as any)?.shiftId ?? null);
+      // Auto refresh shop info in background if missing
+      try {
+        const needShop = (!data?.shopName || !data?.shopAddress) && !!data?.shopId && !!data?.accessToken;
+        if (needShop) {
+          setTimeout(() => {
+            try { refreshShopInfo(); } catch {}
+          }, 0);
+        }
+      } catch {}
     }
   },
   async load(): Promise<AuthData | null> {
@@ -87,6 +99,56 @@ export const clearShiftId = async (): Promise<void> => {
   await authStore.save(updated as AuthData);
 };
 
+// Fetch and persist shop info: shopName, shopAddress
+export const refreshShopInfo = async (): Promise<{ shopName: string | null; shopAddress: string | null } | null> => {
+  try {
+    const data = await authStore.load();
+    const token = data?.accessToken ?? null;
+    const shopId = typeof data?.shopId === 'number' ? data!.shopId : 0;
+    if (!token || !(shopId > 0)) return null;
+
+    const url = `${API_URL}/api/shops?ShopId=${encodeURIComponent(shopId)}&page=1&pageSize=1`;
+    try { console.log('[AuthStore][refreshShopInfo] GET', url); } catch {}
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      try { console.log('[AuthStore][refreshShopInfo] HTTP', res.status, await res.text().catch(()=>'')); } catch {}
+      return null;
+    }
+    const json = await res.json().catch(() => null);
+    const items = Array.isArray(json?.items) ? json.items : Array.isArray(json?.data?.items) ? json.data.items : Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
+    try { console.log('[AuthStore][refreshShopInfo] items len:', Array.isArray(items) ? items.length : -1, 'sample:', items && items[0]); } catch {}
+    const shop = (items as any[])[0] || null;
+    const shopName: string | null = shop?.shopName ?? null;
+    const shopAddress: string | null = shop?.address ?? null;
+
+    const updated: AuthData = { ...(data as AuthData), shopName, shopAddress } as AuthData;
+    await authStore.save(updated);
+    try { console.log('[AuthStore][refreshShopInfo] shopName:', shopName, 'address:', shopAddress); } catch {}
+    return { shopName, shopAddress };
+  } catch (e) {
+    return null;
+  }
+};
+
+export const getShopInfo = async (): Promise<{ shopName: string | null; shopAddress: string | null }> => {
+  const d = await authStore.load();
+  let shopName = d?.shopName ?? null;
+  let shopAddress = d?.shopAddress ?? null;
+  if (!shopName || !shopAddress) {
+    try {
+      console.log('[AuthStore][getShopInfo] missing cached info -> fetching...');
+      const info = await refreshShopInfo();
+      if (info) {
+        shopName = info.shopName;
+        shopAddress = info.shopAddress;
+      }
+    } catch (e) {
+      try { console.log('[AuthStore][getShopInfo] refresh error:', e); } catch {}
+    }
+  }
+  try { console.log('[AuthStore][getShopInfo] return:', { shopName, shopAddress }); } catch {}
+  return { shopName, shopAddress };
+};
 
 // Fetch current open shift (closedDate is null) and persist its shiftId
 export const refreshOpenShiftId = async (): Promise<number | null> => {
@@ -213,8 +275,27 @@ export const saveLoginData = async (loginJson: any): Promise<boolean> => {
       featureIds: Array.isArray(payload?.featureIds) ? payload.featureIds.map((n: any) => Number(n)).filter((n: number) => !Number.isNaN(n)) : [],
     };
     await authStore.save(auth);
+    try { console.log('[AuthStore][login] saved. userId:', userId, 'shopId:', shopId); } catch {}
+    // After saving, try to fetch and persist shop info
+    try {
+      console.log('[AuthStore][login] fetching shop info...');
+      const info = await refreshShopInfo();
+      console.log('[AuthStore][login] shop info:', info);
+    } catch (e) {
+      try { console.log('[AuthStore][login] refreshShopInfo error:', e); } catch {}
+    }
     return true;
   } catch {
     return false;
   }
+};
+
+export const getShopName = async (): Promise<string | null> => {
+  const d = await authStore.load();
+  return d?.shopName ?? null;
+};
+
+export const getShopAddress = async (): Promise<string | null> => {
+  const d = await authStore.load();
+  return d?.shopAddress ?? null;
 };

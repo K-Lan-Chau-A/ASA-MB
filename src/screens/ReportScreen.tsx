@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, LayoutAnimation, Platform, UIManager, Alert, PermissionsAndroid, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -11,6 +11,30 @@ import { getAuthToken, getShopId } from '../services/AuthStore';
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
+
+// Optional imports
+let DateTimePicker: any = null;
+let BlobUtil: any = null;
+try { DateTimePicker = require('@react-native-community/datetimepicker').default; } catch {}
+try {
+  const mod = require('react-native-blob-util');
+  BlobUtil = (mod && (mod.default || mod)) || null;
+} catch {}
+
+// Helper: ArrayBuffer to base64 (fallback if needed)
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  // @ts-ignore
+  if (typeof global.btoa === 'function') return global.btoa(binary);
+  try { return Buffer.from(binary, 'binary').toString('base64'); } catch { return ''; }
+};
+
+const formatShort = (d: Date) => {
+  try { return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+  catch { const mm = String(d.getMonth()+1).padStart(2,'0'); const dd = String(d.getDate()).padStart(2,'0'); return `${dd}/${mm}/${d.getFullYear()}`; }
+};
 
 type ReportDetail = {
   reportDetailId: number;
@@ -182,16 +206,96 @@ const ReportScreen = () => {
   const navigation = useNavigation();
   const PAGE_SIZE = 10;
   const [shopId, setShopId] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  // Date range state (default last 30 days)
+  const [endDate, setEndDate] = useState<Date>(() => new Date());
+  const [startDate, setStartDate] = useState<Date>(() => { const d = new Date(); d.setDate(d.getDate()-30); return d; });
+  const [showDateModal, setShowDateModal] = useState(false);
+  const [pickerVisible, setPickerVisible] = useState<{ which: 'start' | 'end' | null }>({ which: null });
 
   useEffect(() => {
     let mounted = true;
-    getShopId().then((id) => {
-      if (mounted) setShopId(id);
-    });
-    return () => {
-      mounted = false;
-    };
+    getShopId().then((id) => { if (mounted) setShopId(id); });
+    return () => { mounted = false; };
   }, []);
+
+  const requestStoragePermission = useCallback(async () => {
+    if (Platform.OS !== 'android') return true;
+    const sdkInt = (Platform as any).Version ?? 0;
+    if (sdkInt >= 29) return true;
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+        { title: 'Quyền lưu tệp', message: 'Ứng dụng cần quyền để lưu file Excel báo cáo', buttonNeutral: 'Hỏi lại sau', buttonNegative: 'Từ chối', buttonPositive: 'Đồng ý' }
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch { return false; }
+  }, []);
+
+  const handleExportExcel = useCallback(async () => {
+    try {
+      if (!shopId) return;
+      setExporting(true);
+      const token = await getAuthToken();
+      const body = { startDate: startDate.toISOString(), endDate: endDate.toISOString(), shopId } as any;
+      const url = `${API_URL}/api/reports/professional-revenue`;
+      const mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      const fileName = `bao-cao-${Date.now()}.xlsx`;
+
+      if (BlobUtil && typeof BlobUtil.config === 'function') {
+        if (Platform.OS === 'android') {
+          const ok = await requestStoragePermission(); if (!ok) { Alert.alert('Thiếu quyền', 'Không thể lưu file vì thiếu quyền.'); setExporting(false); return; }
+          // Download file to cache first
+          const res = await BlobUtil.config({ fileCache: true, appendExt: 'xlsx' }).fetch('POST', url, {
+            'Content-Type': 'application/json',
+            Accept: mime,
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          }, JSON.stringify(body));
+          let path = res.path();
+          // Move to public Download directory for visibility in File apps
+          try {
+            const dirs = BlobUtil.fs.dirs;
+            const dest = `${dirs.DownloadDir}/${fileName}`;
+            try {
+              await BlobUtil.fs.mv(path, dest);
+            } catch (e) {
+              // If mv fails (e.g., cross-volume), copy as fallback
+              await BlobUtil.fs.cp(path, dest);
+            }
+            path = dest;
+          } catch {}
+          try { console.log('[Report][Excel path]', path); } catch {}
+          try { BlobUtil.android && BlobUtil.android.actionViewIntent && BlobUtil.android.actionViewIntent(path, mime); } catch {}
+          Alert.alert('Thành công', `Đã tải xong. Đang mở tệp.\n\nĐường dẫn: ${path}`);
+        } else {
+          const res = await BlobUtil.config({ fileCache: true, appendExt: 'xlsx' }).fetch('POST', url, {
+            'Content-Type': 'application/json',
+            Accept: mime,
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          }, JSON.stringify(body));
+          const path = res.path();
+          try { BlobUtil.ios && BlobUtil.ios.previewDocument && BlobUtil.ios.previewDocument(path); } catch {}
+          Alert.alert('Thành công', `Đã lưu tệp và mở xem trước.`);
+        }
+      } else {
+        // Fallback: fetch then try open via data URL (limited support)
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: mime, ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+        if (!res.ok) { const t = await res.text(); throw new Error(`Export failed ${res.status}: ${t}`); }
+        const buffer = await res.arrayBuffer();
+        const base64 = arrayBufferToBase64(buffer);
+        Alert.alert('Thiếu thư viện tải tệp', 'Chưa cài react-native-blob-util. Đã ghi base64 ra console để tải thủ công.');
+        console.log('[Report][xlsx-base64]', base64);
+      }
+    } catch (e: any) {
+      Alert.alert('Xuất Excel thất bại', e?.message || 'Vui lòng thử lại');
+    } finally {
+      setExporting(false);
+    }
+  }, [shopId, requestStoragePermission, startDate, endDate]);
+
+  const openDateModal = useCallback(() => setShowDateModal(true), []);
+  const closeDateModal = useCallback(() => setShowDateModal(false), []);
 
   const {
     data,
@@ -241,6 +345,85 @@ const ReportScreen = () => {
         <View style={{ width: 22 }} />
       </View>
 
+      <View style={styles.exportBar}>
+        <TouchableOpacity style={[styles.exportButton, exporting && { opacity: 0.7 }]} onPress={openDateModal} disabled={exporting}>
+          <Icon name="file-excel" size={18} color="#fff" />
+          <Text style={styles.exportText}>{exporting ? 'Đang xuất...' : 'Xuất Excel'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Date Range Modal */}
+      <Modal visible={showDateModal} transparent animationType="fade" onRequestClose={closeDateModal}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Chọn khoảng thời gian</Text>
+
+            <View style={styles.modalRow}>
+              <Text style={styles.modalLabel}>Từ ngày</Text>
+              <TouchableOpacity style={styles.modalInput} onPress={() => setPickerVisible({ which: 'start' })}>
+                <Icon name="calendar" size={18} color="#444" />
+                <Text style={styles.modalInputText}>{formatShort(startDate)}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalRow}>
+              <Text style={styles.modalLabel}>Đến ngày</Text>
+              <TouchableOpacity style={styles.modalInput} onPress={() => setPickerVisible({ which: 'end' })}>
+                <Icon name="calendar" size={18} color="#444" />
+                <Text style={styles.modalInputText}>{formatShort(endDate)}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {!!DateTimePicker && pickerVisible.which && (
+              <DateTimePicker
+                value={pickerVisible.which === 'start' ? startDate : endDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                maximumDate={new Date()}
+                onChange={(event: any, date?: Date) => {
+                  if (Platform.OS === 'android') setPickerVisible({ which: null });
+                  if (!date) return;
+                  if (pickerVisible.which === 'start') {
+                    // Ensure start <= end
+                    const adjusted = date > endDate ? endDate : date;
+                    setStartDate(adjusted);
+                  } else {
+                    const adjusted = date < startDate ? startDate : date;
+                    setEndDate(adjusted);
+                  }
+                }}
+              />
+            )}
+
+            {!DateTimePicker && (
+              <View style={{ paddingVertical: 8 }}>
+                <Text style={{ color: '#666', marginBottom: 8 }}>Thiếu @react-native-community/datetimepicker. Dùng nhanh:</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity style={[styles.quickBtn]} onPress={() => { const d = new Date(); d.setDate(d.getDate()-7); setStartDate(d); setEndDate(new Date()); }}>
+                    <Text style={styles.quickBtnText}>7 ngày</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.quickBtn]} onPress={() => { const d = new Date(); d.setDate(d.getDate()-30); setStartDate(d); setEndDate(new Date()); }}>
+                    <Text style={styles.quickBtnText}>30 ngày</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.quickBtn]} onPress={() => { const now = new Date(); const d = new Date(now.getFullYear(), now.getMonth(), 1); setStartDate(d); setEndDate(new Date()); }}>
+                    <Text style={styles.quickBtnText}>Tháng này</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={[styles.modalBtn, styles.modalCancel]} onPress={closeDateModal}>
+                <Text style={styles.modalCancelText}>Hủy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, styles.modalPrimary]} onPress={() => { handleExportExcel(); closeDateModal(); }}>
+                <Text style={styles.modalPrimaryText}>Xuất</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <FlatList
         style={styles.content}
         data={flatData}
@@ -274,6 +457,12 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E5E5' },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#000' },
   content: { flex: 1 },
+  exportBar: { paddingHorizontal: 16, paddingBottom: 8, paddingTop: 8, backgroundColor: '#F5F5F5' },
+  rangeRow: { flexDirection: 'row', marginBottom: 8 },
+  rangePill: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#ECEFF1', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20 },
+  rangeText: { color: '#37474F', fontWeight: '600' },
+  exportButton: { backgroundColor: '#2E7D32', paddingVertical: 10, borderRadius: 8, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  exportText: { color: '#fff', fontWeight: 'bold' },
   reportItem: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
@@ -403,6 +592,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#2196F3',
   },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  modalCard: { backgroundColor: '#FFF', borderRadius: 12, width: '100%', maxWidth: 420, padding: 16 },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: '#000', marginBottom: 12 },
+  modalRow: { marginBottom: 12 },
+  modalLabel: { color: '#333', marginBottom: 6, fontWeight: '600' },
+  modalInput: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#E0E0E0', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12 },
+  modalInputText: { color: '#333', fontWeight: '500' },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
+  modalBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 },
+  modalCancel: { backgroundColor: '#ECEFF1' },
+  modalPrimary: { backgroundColor: '#2E7D32' },
+  modalCancelText: { color: '#000', fontWeight: '600' },
+  modalPrimaryText: { color: '#FFF', fontWeight: '700' },
+  quickBtn: { backgroundColor: '#ECEFF1', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 },
+  quickBtnText: { color: '#333', fontWeight: '600' },
 });
 
 export default ReportScreen;

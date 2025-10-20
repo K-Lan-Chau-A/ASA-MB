@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
 import API_URL from '../config/api';
 import { getAuthToken, getShiftId, refreshOpenShiftId, clearShiftId, logoutLocal } from '../services/AuthStore';
@@ -9,6 +10,9 @@ import { getAuthToken, getShiftId, refreshOpenShiftId, clearShiftId, logoutLocal
 interface MenuItem {
   id: number;
   title: string;
+  icon: string;
+  iconColor: string;
+  bgColor: string;
   onPress: () => void;
 }
 
@@ -63,20 +67,117 @@ const MoreScreen = () => {
   }, []);
 
   const menuItems: MenuItem[] = [
-    { id: 1, title: 'Chat với AI', onPress: () => navigation.navigate('ChatbotScreen') },
-    { id: 2, title: 'Nhập hàng', onPress: () => navigation.navigate('AddProduct') },
-    { id: 3, title: 'Phiếu quà tặng', onPress: () => navigation.navigate('VoucherScreen') },
-    { id: 4, title: 'Khuyến mãi', onPress: () => navigation.navigate('PromotionScreen') },
-    { id: 5, title: 'Lịch sử kho', onPress: () => navigation.navigate('InventoryTransactionScreen') },
-    { id: 6, title: 'Khách hàng', onPress: () => navigation.navigate('ManageCustomerScreen') },
-    { id: 7, title: 'Danh mục sản phẩm', onPress: () => navigation.navigate('ManageCategoryScreen') },
-    { id: 8, title: 'Lịch sử hoạt động', onPress: () => navigation.navigate('LogActivityScreen') },
-    { id: 9, title: 'Quản lý nhân viên', onPress: () => navigation.navigate('ManageAccount') },
-    { id: 10, title: 'Quản lý xếp hạng', onPress: () => navigation.navigate('RankScreen') },
-    { id: 11, title: 'Đóng ca', onPress: handleCloseShiftPress },
-    { id: 12, title: 'Báo cáo', onPress: () => navigation.navigate('ReportScreen') },
-    { id: 13, title: 'Cài đặt', onPress: () => navigation.navigate('SettingScreen') },
-    { id: 14, title: 'Đăng xuất', onPress: async () => {
+    { 
+      id: 1, 
+      title: 'Chat với AI', 
+      icon: 'robot', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: () => navigation.navigate('ChatbotScreen') 
+    },
+    { 
+      id: 2, 
+      title: 'Nhập hàng', 
+      icon: 'package-variant-closed', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: () => navigation.navigate('AddProduct') 
+    },
+    { 
+      id: 3, 
+      title: 'Phiếu quà tặng', 
+      icon: 'gift', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: () => navigation.navigate('VoucherScreen') 
+    },
+    { 
+      id: 4, 
+      title: 'Khuyến mãi', 
+      icon: 'sale', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: () => navigation.navigate('PromotionScreen') 
+    },
+    { 
+      id: 5, 
+      title: 'Lịch sử kho', 
+      icon: 'history', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: () => navigation.navigate('InventoryTransactionScreen') 
+    },
+    { 
+      id: 6, 
+      title: 'Khách hàng', 
+      icon: 'account-group', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: () => navigation.navigate('ManageCustomerScreen') 
+    },
+    { 
+      id: 7, 
+      title: 'Danh mục sản phẩm', 
+      icon: 'view-grid', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: () => navigation.navigate('ManageCategoryScreen') 
+    },
+    { 
+      id: 8, 
+      title: 'Lịch sử hoạt động', 
+      icon: 'clipboard-text-clock', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: () => navigation.navigate('LogActivityScreen') 
+    },
+    { 
+      id: 9, 
+      title: 'Quản lý nhân viên', 
+      icon: 'account-tie', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: () => navigation.navigate('ManageAccount') 
+    },
+    { 
+      id: 10, 
+      title: 'Quản lý xếp hạng', 
+      icon: 'medal', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: () => navigation.navigate('RankScreen') 
+    },
+    { 
+      id: 11, 
+      title: 'Đóng ca', 
+      icon: 'lock-clock', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: handleCloseShiftPress 
+    },
+    { 
+      id: 12, 
+      title: 'Báo cáo', 
+      icon: 'chart-box', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: () => navigation.navigate('ReportScreen') 
+    },
+    { 
+      id: 13, 
+      title: 'Cài đặt', 
+      icon: 'cog', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: () => navigation.navigate('SettingScreen') 
+    },
+    { 
+      id: 14, 
+      title: 'Đăng xuất', 
+      icon: 'logout', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: async () => {
         try {
           await logoutLocal();
         } finally {
@@ -89,14 +190,24 @@ const MoreScreen = () => {
   ];
 
   const renderMenuItem = (item: MenuItem) => (
-    <TouchableOpacity key={item.id} style={styles.menuItem} onPress={item.onPress}>
+    <TouchableOpacity 
+      key={item.id} 
+      style={styles.menuItem} 
+      onPress={item.onPress}
+      activeOpacity={0.7}
+    >
+      <Icon name={item.icon} size={24} color={item.iconColor} />
       <Text style={styles.menuText}>{item.title}</Text>
     </TouchableOpacity>
   );
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom','left','right']}>
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.menuGrid}>
           {menuItems.map(renderMenuItem)}
         </View>
@@ -127,37 +238,44 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
   },
   content: {
+    flex: 1,
+  },
+  scrollContent: {
     padding: 16,
+    paddingBottom: 30,
   },
   menuGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
   },
   menuItem: {
     width: '48%',
-    backgroundColor: '#E5E5E5',
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-    borderRadius: 25,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 1,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
     elevation: 2,
+    minHeight: 90,
   },
   menuText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '500',
-    color: '#333333',
+    color: '#333',
     textAlign: 'center',
+    lineHeight: 16,
+    marginTop: 8,
   },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center', padding: 16 },
   modalCard: { backgroundColor: '#FFF', borderRadius: 12, width: '100%', maxWidth: 420, padding: 16 },
