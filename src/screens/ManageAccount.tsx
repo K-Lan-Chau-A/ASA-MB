@@ -70,7 +70,7 @@ const ManageAccount = () => {
       const defaults: Record<number, boolean> = {};
       for (const f of mapped) defaults[f.featureId] = true;
       setCreateFeaturesSelected(defaults);
-      try { console.log('[Features][load] count:', mapped.length); } catch {}
+      try { console.log('[Features][load] count:', mapped.length, 'availableFeatures:', mapped); } catch {}
     } catch {
       setAvailableFeatures([]);
     }
@@ -190,17 +190,24 @@ const ManageAccount = () => {
         // Cấp quyền mặc định dựa trên availableFeatures
         try {
           if (createdUserId > 0 && availableFeatures.length > 0) {
-            const payload = {
-              userId: createdUserId,
-              features: availableFeatures.map(f => ({ featureId: f.featureId, featureName: f.featureName, isEnabled: Boolean(createFeaturesSelected[f.featureId]), isEnable: Boolean(createFeaturesSelected[f.featureId]) })),
-            } as any;
-            const featRes = await fetch(`${API_URL}/api/userfeature`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-              body: JSON.stringify(payload),
-            });
-            const featJson = await featRes.json().catch(() => null);
-            try { console.log('[UserFeature][assign] status:', featRes.status, 'body:', featJson); } catch {}
+            const featuresToAssign = availableFeatures
+              .filter(f => Boolean(createFeaturesSelected[f.featureId]))
+              .map(f => ({ featureId: f.featureId, featureName: f.featureName, isEnabled: true, isEnable: true }));
+            
+            if (featuresToAssign.length > 0) {
+              const payload = {
+                userId: createdUserId,
+                features: featuresToAssign,
+              } as any;
+              try { console.log('[UserFeature][assign] payload:', payload); } catch {}
+              const featRes = await fetch(`${API_URL}/api/userfeature`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify(payload),
+              });
+              const featJson = await featRes.json().catch(() => null);
+              try { console.log('[UserFeature][assign] status:', featRes.status, 'body:', featJson); } catch {}
+            }
           }
         } catch {}
         closeCreate();
@@ -260,15 +267,40 @@ const ManageAccount = () => {
     }
   }, []);
 
-  const openEdit = useCallback((u: Staff) => {
+  const loadUserFeatures = useCallback(async (userId: number) => {
+    try {
+      const token = await getAuthToken();
+      if (!token || !(userId > 0)) return {};
+      const res = await fetch(`${API_URL}/api/userfeature?UserId=${userId}&page=1&pageSize=10`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => null);
+      const items = extractItems(json);
+      const userFeatures: Record<number, boolean> = {};
+      for (const item of items) {
+        const featureId = Number(item?.featureId ?? 0);
+        const isEnabled = Boolean(item?.isEnabled);
+        if (featureId > 0) {
+          userFeatures[featureId] = isEnabled;
+        }
+      }
+      try { console.log('[loadUserFeatures] userId:', userId, 'userFeatures:', userFeatures); } catch {}
+      return userFeatures;
+    } catch {
+      return {};
+    }
+  }, []);
+
+  const openEdit = useCallback(async (u: Staff) => {
     setEditVisible(true);
     setEditOriginal(u);
     setEditForm({ id: u.userId, fullName: u.fullName || '', phoneNumber: u.phoneNumber || '', citizenIdNumber: u.citizenIdNumber || '', status: typeof u.status === 'number' ? (u.status as number) : 1, avatarUri: '' });
-    // default all features selected; could be enhanced to fetch per-user mapping if API available
-    const defaults: Record<number, boolean> = {};
-    for (const f of availableFeatures) defaults[f.featureId] = true;
-    setEditFeaturesSelected(defaults);
-  }, []);
+    
+    // Load user's current features
+    const userFeatures = await loadUserFeatures(u.userId);
+    setEditFeaturesSelected(userFeatures);
+    try { console.log('[openEdit] setEditFeaturesSelected:', userFeatures); } catch {}
+  }, [loadUserFeatures]);
 
   const submitUpdate = useCallback(async () => {
     try {
@@ -295,10 +327,19 @@ const ManageAccount = () => {
       const updateUserPromise = fetch(url, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: fd });
       const updateFeaturesPromise = (async () => {
         if (availableFeatures.length === 0) return { ok: true, status: 200 } as any;
+        // Only send features that the user actually has (from userFeatures)
+        const userFeatureIds = Object.keys(editFeaturesSelected).map(Number);
+        const featuresToUpdate = availableFeatures
+          .filter(f => userFeatureIds.includes(f.featureId))
+          .map(f => ({ featureId: f.featureId, isEnable: Boolean(editFeaturesSelected[f.featureId]) }));
+        
+        if (featuresToUpdate.length === 0) return { ok: true, status: 200 } as any;
+        
         const payload = {
           userId: editOriginal.userId,
-          features: availableFeatures.map(f => ({ featureId: f.featureId, isEnable: Boolean(editFeaturesSelected[f.featureId]) })),
+          features: featuresToUpdate,
         } as any;
+        try { console.log('[UserFeature][update] payload:', payload); } catch {}
         const resp = await fetch(`${API_URL}/api/userfeature`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

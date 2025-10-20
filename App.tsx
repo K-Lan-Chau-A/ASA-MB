@@ -25,6 +25,7 @@ import ManageCustomerScreen from './src/screens/ManageCustomerScreen';
 import ManageCategoryScreen from './src/screens/ManageCategoryScreen';
 import LogActivityScreen from './src/screens/LogActivityScreen';
 import ManageAccount from './src/screens/ManageAccount';
+import RankScreen from './src/screens/RankScreen';
 import ReportScreen from './src/screens/ReportScreen';
 import SettingScreen from './src/screens/SettingScreen';
 import { signalRService } from './src/services/SignalRService';
@@ -157,6 +158,7 @@ function App() {
         <Stack.Screen name="ManageCategoryScreen" component={ManageCategoryScreen} options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="LogActivityScreen" component={LogActivityScreen} options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="ManageAccount" component={ManageAccount} options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="RankScreen" component={RankScreen} options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="ReportScreen" component={ReportScreen} options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="SettingScreen" component={SettingScreen} options={{ headerShown: false, animation: 'slide_from_right' }} />
       </Stack.Navigator>

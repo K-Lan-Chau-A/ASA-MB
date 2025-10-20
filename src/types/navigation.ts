@@ -11,6 +11,7 @@ export type RootStackParamList = {
   ManageCategoryScreen: undefined;
   LogActivityScreen: undefined;
   ManageAccount: undefined;
+  RankScreen: undefined;
   ReportScreen: undefined;
   SettingScreen: undefined;
   OrderDetail: { orderId: number };

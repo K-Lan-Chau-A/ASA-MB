@@ -60,6 +60,11 @@ const ConfirmOrderScreen = () => {
   // Payment method state
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>('cash');
   
+  // Cash payment states
+  const [showCashModal, setShowCashModal] = useState(false);
+  const [cashAmount, setCashAmount] = useState('');
+  const [changeAmount, setChangeAmount] = useState(0);
+  
   // Modal states
   const [showQRModal, setShowQRModal] = useState(false);
   const [showNFCModal, setShowNFCModal] = useState(false);
@@ -140,6 +145,43 @@ const ConfirmOrderScreen = () => {
   }, [discountPercentage, originalTotal]);
 
   const finalTotal = originalTotal - appliedDiscount;
+
+  // Cash payment denominations
+  const denominations = [10000, 20000, 50000, 100000, 200000, 500000];
+  
+  // Calculate change amount
+  useEffect(() => {
+    const amount = parseInt(cashAmount.replace(/[^\d]/g, '')) || 0;
+    const change = Math.max(0, amount - finalTotal);
+    setChangeAmount(change);
+  }, [cashAmount, finalTotal]);
+
+  // Handle denomination button press
+  const handleDenominationPress = useCallback((amount: number) => {
+    setCashAmount(amount.toLocaleString('vi-VN'));
+  }, []);
+
+  // Handle manual amount input
+  const handleAmountChange = useCallback((text: string) => {
+    const numericValue = text.replace(/[^\d]/g, '');
+    if (numericValue === '') {
+      setCashAmount('');
+      return;
+    }
+    const amount = parseInt(numericValue);
+    setCashAmount(amount.toLocaleString('vi-VN'));
+  }, []);
+
+  // Handle cash payment confirmation
+  const handleCashPayment = useCallback(() => {
+    const amount = parseInt(cashAmount.replace(/[^\d]/g, '')) || 0;
+    if (amount < finalTotal) {
+      Alert.alert('Lỗi', 'Số tiền khách trả phải lớn hơn hoặc bằng tổng thanh toán');
+      return;
+    }
+    setShowCashModal(false);
+    submitOrder();
+  }, [cashAmount, finalTotal]);
 
   const mapPaymentMethodToCode = (method: PaymentMethod) => {
     switch (method) {
@@ -395,18 +437,10 @@ const ConfirmOrderScreen = () => {
       // Create order first, then show NFC modal
       submitOrder();
     } else {
-      // Cash payment - direct confirmation
-      Alert.alert(
-        'Xác nhận thanh toán',
-        `Phương thức: ${getPaymentMethodName(selectedPaymentMethod)}\nTổng thanh toán: ${finalTotal.toLocaleString('vi-VN')}đ`,
-        [
-          { text: 'Hủy', style: 'cancel' },
-          { 
-            text: 'Thanh toán', 
-            onPress: submitOrder
-          },
-        ]
-      );
+      // Cash payment - show cash modal
+      setCashAmount('');
+      setChangeAmount(0);
+      setShowCashModal(true);
     }
   };
 
@@ -951,6 +985,89 @@ const ConfirmOrderScreen = () => {
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalCancelButton} onPress={() => setShowNFCModal(false)}>
                 <Text style={styles.modalCancelButtonText}>Hủy bỏ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Cash Payment Modal */}
+      <Modal
+        visible={showCashModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowCashModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.cashModalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Thanh toán tiền mặt</Text>
+              <TouchableOpacity onPress={() => setShowCashModal(false)}>
+                <Icon name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.cashModalContent}>
+              {/* Total Amount */}
+              <View style={styles.totalAmountSection}>
+                <Text style={styles.totalAmountLabel}>Tổng thanh toán:</Text>
+                <Text style={styles.totalAmountValue}>{finalTotal.toLocaleString('vi-VN')}đ</Text>
+              </View>
+              
+              {/* Cash Amount Input */}
+              <View style={styles.cashInputSection}>
+                <Text style={styles.cashInputLabel}>Số tiền khách trả:</Text>
+                <TextInput
+                  style={styles.cashInput}
+                  value={cashAmount}
+                  onChangeText={handleAmountChange}
+                  placeholder="Nhập số tiền"
+                  keyboardType="numeric"
+                  autoFocus={true}
+                />
+              </View>
+              
+              {/* Denomination Buttons */}
+              <View style={styles.denominationSection}>
+                <Text style={styles.denominationLabel}>Mệnh giá có sẵn:</Text>
+                <View style={styles.denominationGrid}>
+                  {denominations
+                    .filter(amount => amount >= finalTotal)
+                    .map((amount) => (
+                      <TouchableOpacity
+                        key={amount}
+                        style={styles.denominationButton}
+                        onPress={() => handleDenominationPress(amount)}
+                      >
+                        <Text style={styles.denominationButtonText}>
+                          {amount.toLocaleString('vi-VN')}đ
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                </View>
+              </View>
+              
+              {/* Change Amount */}
+              {changeAmount > 0 && (
+                <View style={styles.changeSection}>
+                  <Text style={styles.changeLabel}>Tiền thối lại:</Text>
+                  <Text style={styles.changeValue}>{changeAmount.toLocaleString('vi-VN')}đ</Text>
+                </View>
+              )}
+            </View>
+            
+            {/* Action Buttons */}
+            <View style={styles.cashModalButtons}>
+             
+              <TouchableOpacity 
+                style={[
+                  styles.modalConfirmButton, 
+                  (!cashAmount || parseInt(cashAmount.replace(/[^\d]/g, '')) < finalTotal) && styles.modalConfirmButtonDisabled
+                ]} 
+                onPress={handleCashPayment}
+                disabled={!cashAmount || parseInt(cashAmount.replace(/[^\d]/g, '')) < finalTotal}
+              >
+                <Text style={styles.modalConfirmButtonText}>Xác nhận</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1744,6 +1861,121 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     fontWeight: '500',
+  },
+  
+  // Cash Modal Styles
+  cashModalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    width: '100%',
+    maxHeight: '80%',
+    padding: 20,
+  },
+  cashModalContent: {
+    marginBottom: 20,
+  },
+  totalAmountSection: {
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingVertical: 16,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+  },
+  totalAmountLabel: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 4,
+  },
+  totalAmountValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#009DA5',
+  },
+  cashInputSection: {
+    marginBottom: 20,
+  },
+  cashInputLabel: {
+    fontSize: 16,
+    color: '#000',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  cashInput: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    padding: 16,
+    fontSize: 18,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  denominationSection: {
+    marginBottom: 20,
+  },
+  denominationLabel: {
+    fontSize: 16,
+    color: '#000',
+    marginBottom: 12,
+    fontWeight: '500',
+  },
+  denominationGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  denominationButton: {
+    backgroundColor: '#F0F9FA',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#009DA5',
+    minWidth: '30%',
+    alignItems: 'center',
+  },
+  denominationButtonText: {
+    fontSize: 14,
+    color: '#009DA5',
+    fontWeight: 'bold',
+  },
+  changeSection: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    backgroundColor: '#E8F5E8',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  changeLabel: {
+    fontSize: 16,
+    color: '#2E7D32',
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  changeValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2E7D32',
+  },
+  cashModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalConfirmButton: {
+    flex: 1,
+    backgroundColor: '#009DA5',
+    paddingVertical: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalConfirmButtonDisabled: {
+    backgroundColor: '#CCCCCC',
+  },
+  modalConfirmButtonText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
   },
 });
 

@@ -72,10 +72,11 @@ const MoreScreen = () => {
     { id: 7, title: 'Danh mục sản phẩm', onPress: () => navigation.navigate('ManageCategoryScreen') },
     { id: 8, title: 'Lịch sử hoạt động', onPress: () => navigation.navigate('LogActivityScreen') },
     { id: 9, title: 'Quản lý nhân viên', onPress: () => navigation.navigate('ManageAccount') },
-    { id: 10, title: 'Đóng ca', onPress: handleCloseShiftPress },
-    { id: 11, title: 'Báo cáo', onPress: () => navigation.navigate('ReportScreen') },
-    { id: 12, title: 'Cài đặt', onPress: () => navigation.navigate('SettingScreen') },
-    { id: 13, title: 'Đăng xuất', onPress: async () => {
+    { id: 10, title: 'Quản lý xếp hạng', onPress: () => navigation.navigate('RankScreen') },
+    { id: 11, title: 'Đóng ca', onPress: handleCloseShiftPress },
+    { id: 12, title: 'Báo cáo', onPress: () => navigation.navigate('ReportScreen') },
+    { id: 13, title: 'Cài đặt', onPress: () => navigation.navigate('SettingScreen') },
+    { id: 14, title: 'Đăng xuất', onPress: async () => {
         try {
           await logoutLocal();
         } finally {

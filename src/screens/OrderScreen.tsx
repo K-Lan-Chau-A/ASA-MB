@@ -21,6 +21,7 @@ import { RootStackParamList } from '../types/navigation';
 import API_URL from '../config/api';
 import { getShopId, getAuthToken, getShiftId, getUserId } from '../services/AuthStore';
 import { setShiftId } from '../services/AuthStore';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface ProductUnit {
   unitName: string;
@@ -240,17 +241,75 @@ export const clearGlobalOrderState = () => {
   persistedProducts = [];
 };
 
+// Function to fetch all products for preloading
+const fetchAllProducts = async (shopId: number): Promise<AvailableProduct[]> => {
+  const token = await getAuthToken();
+  const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=1000`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  const data = await res.json();
+  const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+  
+  return items.map((p: any, idx: number) => {
+    const availableQuantity = Number(p.quantity ?? p.availableQuantity ?? 0);
+    const units = Array.isArray(p.units) && p.units.length > 0
+      ? (p.units as Array<{ name?: string; unitName?: string; price?: number; conversionFactor?: number; quantityInBaseUnit?: number; isBaseUnit?: boolean; }>).map((u) => ({
+          unitName: String(u.name ?? u.unitName ?? 'Cái'),
+          price: Number(u.price ?? p.price ?? 0),
+          quantityInBaseUnit: Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1),
+          isBaseUnit: Boolean(u.isBaseUnit ?? false),
+          availableQuantity: availableQuantity ? Math.floor(availableQuantity / Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1)) : undefined,
+        }))
+      : [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true, availableQuantity }];
+    const selectedUnit = (units.find(u => u.isBaseUnit) || units[0]).unitName;
+    return {
+      id: String(p.id ?? p.productId ?? idx + 1),
+      name: String(p.productName ?? p.name ?? 'Sản phẩm'),
+      price: Number(p.price ?? 0),
+      barcode: p.barcode ? String(p.barcode) : undefined,
+      imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
+      units,
+      selectedUnit,
+      availableQuantity,
+    };
+  });
+};
+
 const OrderScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'Order'>>();
+  const queryClient = useQueryClient();
   const [products, setProducts] = useState<Product[]>(persistedProducts);
   const [searchText, setSearchText] = useState('');
-  const [availableProducts, setAvailableProducts] = useState<AvailableProduct[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const searchInputRef = useRef<TextInput | null>(null);
   const flatListRef = useRef<FlatList>(null);
+  const [shopId, setShopId] = useState<number | null>(null);
+
+  // Preload all products when component mounts
+  const { 
+    data: allProducts = [], 
+    isLoading: isLoadingProducts, 
+    error: productsError 
+  } = useQuery({
+    queryKey: ['allProducts', shopId],
+    queryFn: () => fetchAllProducts(shopId!),
+    enabled: shopId !== null && shopId > 0,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    cacheTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+  });
+
+  // Get shopId on mount
+  useEffect(() => {
+    let mounted = true;
+    getShopId().then((id) => {
+      if (mounted) setShopId(id);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Save products to global state whenever it changes
   useEffect(() => {
@@ -304,7 +363,14 @@ const OrderScreen = () => {
         console.log('📱 Restoring products from global state');
         setProducts([...persistedProducts]);
       }
-    }, [route.params?.orderCompleted])
+      
+      // Refetch products when coming back from AddProductScreen to include new products
+      // This ensures newly created products are available for search
+      if (shopId) {
+        console.log('📱 Refetching products to include any new products');
+        queryClient.invalidateQueries({ queryKey: ['allProducts', shopId] });
+      }
+    }, [route.params?.orderCompleted, shopId, queryClient])
   );
 
   // Function to completely clear order state
@@ -561,25 +627,25 @@ const OrderScreen = () => {
   };
 
   const filteredProducts = useMemo(() => {
-    if (!searchText || searchText.trim() === '') {
+    if (!searchText || searchText.trim() === '' || isLoadingProducts) {
       return [];
     }
     const searchTerm = searchText.toLowerCase().trim();
-    const filtered = availableProducts.filter(product => 
+    const filtered = allProducts.filter(product => 
       product.name.toLowerCase().includes(searchTerm) || (product.barcode || '').includes(searchTerm)
     );
     return filtered.slice(0, 10);
-  }, [searchText, availableProducts]);
+  }, [searchText, allProducts, isLoadingProducts]);
 
   const totalFilteredCount = useMemo(() => {
-    if (!searchText || searchText.trim() === '') {
+    if (!searchText || searchText.trim() === '' || isLoadingProducts) {
       return 0;
     }
     const searchTerm = searchText.toLowerCase().trim();
-    return availableProducts.filter(product => 
+    return allProducts.filter(product => 
       product.name.toLowerCase().includes(searchTerm) || (product.barcode || '').includes(searchTerm)
     ).length;
-  }, [searchText, availableProducts]);
+  }, [searchText, allProducts, isLoadingProducts]);
 
   const renderProduct = useCallback(({ item, index }: { item: Product; index: number }) => (
     <ProductItem 
@@ -669,56 +735,6 @@ const OrderScreen = () => {
     );
   }, [productQuantities, addProduct, updateQuantity]);
 
-  // Fetch suggestions when typing (debounced)
-  useEffect(() => {
-    const run = async () => {
-      const term = searchText.trim();
-      if (term.length === 0) {
-        setAvailableProducts([]);
-        return;
-      }
-      setIsSearching(true);
-      try {
-        const shopId = (await getShopId()) ?? 0;
-        const token = await getAuthToken();
-        const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=100`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
-        const data = await res.json();
-        const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-        const mapped: AvailableProduct[] = items.map((p: any, idx: number) => {
-          const availableQuantity = Number(p.quantity ?? p.availableQuantity ?? 0);
-          const units = Array.isArray(p.units) && p.units.length > 0
-            ? (p.units as Array<{ name?: string; unitName?: string; price?: number; conversionFactor?: number; quantityInBaseUnit?: number; isBaseUnit?: boolean; }>).map((u) => ({
-                unitName: String(u.name ?? u.unitName ?? 'Cái'),
-                price: Number(u.price ?? p.price ?? 0),
-                quantityInBaseUnit: Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1),
-                isBaseUnit: Boolean(u.isBaseUnit ?? false),
-                availableQuantity: availableQuantity ? Math.floor(availableQuantity / Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1)) : undefined,
-              }))
-            : [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true, availableQuantity }];
-          const selectedUnit = (units.find(u => u.isBaseUnit) || units[0]).unitName;
-          return {
-            id: String(p.id ?? p.productId ?? idx + 1),
-            name: String(p.productName ?? p.name ?? 'Sản phẩm'),
-            price: Number(p.price ?? 0),
-            barcode: p.barcode ? String(p.barcode) : undefined,
-            imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
-            units,
-            selectedUnit,
-            availableQuantity,
-          };
-        });
-        setAvailableProducts(mapped);
-      } catch (e) {
-        setAvailableProducts([]);
-      } finally {
-        setIsSearching(false);
-      }
-    };
-    const t = setTimeout(run, 250);
-    return () => clearTimeout(t);
-  }, [searchText]);
 
 
 
@@ -762,15 +778,19 @@ const OrderScreen = () => {
         <TouchableWithoutFeedback onPress={(e: GestureResponderEvent) => e.stopPropagation()}>
           <View style={styles.availableProductsSection}>
           <Text style={styles.availableProductsTitle}>
-            Sản phẩm có sẵn: ({filteredProducts.length}{totalFilteredCount > 10 ? `/${totalFilteredCount}` : ''} sản phẩm)
+            Sản phẩm có sẵn: {isLoadingProducts ? 'Đang tải...' : `(${filteredProducts.length}${totalFilteredCount > 10 ? `/${totalFilteredCount}` : ''} sản phẩm)`}
           </Text>
-          {totalFilteredCount > 10 && (
+          {!isLoadingProducts && totalFilteredCount > 10 && (
             <Text style={styles.limitedResultsText}>
               Hiển thị 10 kết quả đầu tiên. Gõ thêm để thu hẹp tìm kiếm.
             </Text>
           )}
 
-          {filteredProducts.length > 0 ? (
+          {isLoadingProducts ? (
+            <View style={styles.noResultsContainer}>
+              <Text style={styles.noResultsText}>Đang tải sản phẩm...</Text>
+            </View>
+          ) : filteredProducts.length > 0 ? (
             <FlatList
               ref={flatListRef}
               data={filteredProducts}
