@@ -395,7 +395,7 @@ const RankScreen = () => {
               />
               
               <TextInput
-                placeholder="Ngưỡng tiêu dùng (VNĐ) - để trống nếu không giới hạn"
+                placeholder="Ngưỡng tiêu dùng (VNĐ)"
                 style={styles.input}
                 value={createForm.threshold}
                 onChangeText={(text) => setCreateForm(prev => ({ ...prev, threshold: text }))}
