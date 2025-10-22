@@ -360,7 +360,7 @@ const ConfirmOrderScreen = () => {
         }
       } else {
         try { console.log('[CreateOrder] response missing orderId', data); } catch {}
-        Alert.alert('Lỗi', 'Tạo đơn không trả về orderId. Vui lòng thử lại.');
+        Alert.alert('Lỗi', 'Tạo đơn không trả về mã đơn hàng. Vui lòng thử lại.');
         setCreatedOrder(null);
       }
     } catch (e: any) {

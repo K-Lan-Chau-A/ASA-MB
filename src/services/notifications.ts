@@ -22,20 +22,30 @@ export type NotificationsResponse = {
 
 export async function fetchNotifications(params: {
   shopId: number;
+  userId: number;
   page: number;
   pageSize: number;
 }): Promise<NotificationsResponse> {
-  const { shopId, page, pageSize } = params;
+  const { shopId, userId, page, pageSize } = params;
   const url = `${API_URL}/api/notifications?ShopId=${encodeURIComponent(
     shopId
-  )}&page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}`;
+  )}&UserId=${encodeURIComponent(userId)}&page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}`;
+
+  console.log('🔔 fetchNotifications - API URL:', url);
+  console.log('🔔 fetchNotifications - Params:', params);
 
   const response = await fetch(url);
+  console.log('🔔 fetchNotifications - Response status:', response.status);
+  
   if (!response.ok) {
     const text = await response.text();
+    console.log('🔔 fetchNotifications - Error response:', text);
     throw new Error(`Failed to fetch notifications: ${response.status} ${text}`);
   }
-  return (await response.json()) as NotificationsResponse;
+  
+  const result = await response.json();
+  console.log('🔔 fetchNotifications - Response data:', result);
+  return result as NotificationsResponse;
 }
 
 

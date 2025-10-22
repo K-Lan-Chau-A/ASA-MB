@@ -13,6 +13,7 @@ const HomeScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [statisticsData, setStatisticsData] = useState<any>(null);
   const [statisticsLoading, setStatisticsLoading] = useState(false);
+  const [selectedDataPoint, setSelectedDataPoint] = useState<{date: string, revenue: number} | null>(null);
 
   const loadShiftStats = useCallback(async () => {
     try {
@@ -91,7 +92,7 @@ const HomeScreen = () => {
     color: (opacity = 1) => `rgba(99, 110, 114, ${opacity})`,
     strokeWidth: 2,
     barPercentage: 0.6,
-    decimalPlaces: 0,
+    decimalPlaces: 1,
     labelColor: (opacity = 1) => `rgba(51, 51, 51, ${opacity})`,
     style: {
       borderRadius: 16,
@@ -143,6 +144,24 @@ const HomeScreen = () => {
       return null;
     }
     
+    // Calculate proper Y-axis values
+    const maxValue = Math.max(...data);
+    const minValue = Math.min(...data);
+    const range = maxValue - minValue;
+    
+    // Create 5 evenly spaced Y-axis values
+    const yAxisValues = [];
+    if (range === 0) {
+      // If all values are the same, create a small range around the value
+      const centerValue = maxValue;
+      yAxisValues.push(0, centerValue * 0.5, centerValue, centerValue * 1.5, centerValue * 2);
+    } else {
+      const step = range / 4;
+      for (let i = 0; i <= 4; i++) {
+        yAxisValues.push(minValue + (step * i));
+      }
+    }
+    
     return {
       labels,
       datasets: [{
@@ -150,7 +169,38 @@ const HomeScreen = () => {
         color: (opacity = 1) => `rgba(52, 168, 83, ${opacity})`,
         strokeWidth: 3,
       }],
+      yAxisValues: yAxisValues.map(val => Math.round(val * 10) / 10), // Round to 1 decimal
     };
+  }, [statisticsData]);
+
+  // Handle data point selection
+  const handleDataPointPress = useCallback((data: any) => {
+    if (!statisticsData?.revenueStats?.dailyRevenues) return;
+    
+    const dailyRevenues = statisticsData.revenueStats.dailyRevenues;
+    const index = data.index;
+    
+    if (index >= 0 && index < dailyRevenues.length) {
+      const selectedItem = dailyRevenues[index];
+      const revenue = Number(selectedItem?.revenue || 0);
+      const date = selectedItem?.date;
+      
+      if (date) {
+        try {
+          const dateObj = new Date(date);
+          const formattedDate = `${dateObj.getDate()}/${dateObj.getMonth() + 1}/${dateObj.getFullYear()}`;
+          setSelectedDataPoint({
+            date: formattedDate,
+            revenue: revenue
+          });
+        } catch {
+          setSelectedDataPoint({
+            date: date,
+            revenue: revenue
+          });
+        }
+      }
+    }
   }, [statisticsData]);
 
   // Process top products data
@@ -267,7 +317,7 @@ const HomeScreen = () => {
                     chartConfig={chartConfig}
                     bezier
                     style={styles.chart}
-                    yAxisSuffix="M"
+                    yAxisSuffix=""
                     withInnerLines={true}
                     withOuterLines={false}
                     withVerticalLabels={true}
@@ -275,8 +325,37 @@ const HomeScreen = () => {
                     withDots={true}
                     withShadow={false}
                     fromZero={true}
+                    segments={4}
+                    formatYLabel={(value) => {
+                      const num = parseFloat(value);
+                      if (num === 0) return '0';
+                      if (num < 1) return num.toFixed(1);
+                      return Math.round(num).toString();
+                    }}
+                    onDataPointClick={handleDataPointPress}
                   />
                   <Text style={styles.chartNote}>Đơn vị: triệu VNĐ</Text>
+                  
+                  {/* Selected Data Point Info */}
+                  {selectedDataPoint && (
+                    <View style={styles.selectedDataPointContainer}>
+                      <View style={styles.selectedDataPointCard}>
+                        <Icon name="calendar" size={20} color="#34A853" />
+                        <View style={styles.selectedDataPointInfo}>
+                          <Text style={styles.selectedDataPointDate}>{selectedDataPoint.date}</Text>
+                          <Text style={styles.selectedDataPointRevenue}>
+                            {selectedDataPoint.revenue.toLocaleString('vi-VN')} VNĐ
+                          </Text>
+                        </View>
+                        <TouchableOpacity 
+                          onPress={() => setSelectedDataPoint(null)}
+                          style={styles.closeButton}
+                        >
+                          <Icon name="close" size={20} color="#666" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
                 </>
               ) : (
                 <View style={styles.noDataContainer}>
@@ -606,6 +685,38 @@ const styles = StyleSheet.create({
   categoryStats: {
     fontSize: 12,
     color: '#666',
+  },
+  // Selected data point styles
+  selectedDataPointContainer: {
+    marginTop: 16,
+    paddingHorizontal: 4,
+  },
+  selectedDataPointCard: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderLeftWidth: 4,
+    borderLeftColor: '#34A853',
+  },
+  selectedDataPointInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  selectedDataPointDate: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  selectedDataPointRevenue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#34A853',
+  },
+  closeButton: {
+    padding: 4,
   },
 });
 

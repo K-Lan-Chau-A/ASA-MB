@@ -53,6 +53,7 @@ const NotificationScreen = () => {
     let mounted = true;
     Promise.all([loadShopId(), loadUserId()]).then(([sid, uid]) => {
       if (!mounted) return;
+      console.log('🔔 NotificationScreen - Loaded IDs:', { shopId: sid, userId: uid });
       setShopId(sid);
       setUserId(uid);
     });
@@ -100,19 +101,33 @@ const NotificationScreen = () => {
     isFetchingNextPage,
     isRefetching,
   } = useInfiniteQuery({
-    queryKey: ['notifications', shopId],
-    queryFn: ({ pageParam = 1 }) =>
-      fetchNotifications({ shopId: shopId as number, page: pageParam as number, pageSize: PAGE_SIZE }),
+    queryKey: ['notifications', shopId, userId],
+    queryFn: ({ pageParam = 1 }) => {
+      console.log('🔔 NotificationScreen - Fetching notifications with params:', { 
+        shopId: shopId as number, 
+        userId: userId as number, 
+        page: pageParam as number, 
+        pageSize: PAGE_SIZE 
+      });
+      return fetchNotifications({ 
+        shopId: shopId as number, 
+        userId: userId as number, 
+        page: pageParam as number, 
+        pageSize: PAGE_SIZE 
+      });
+    },
     initialPageParam: 1,
     getNextPageParam: (lastPage) => {
       if (lastPage.page < lastPage.totalPages) return lastPage.page + 1;
       return undefined;
     },
-    enabled: typeof shopId === 'number' && shopId > 0,
+    enabled: typeof shopId === 'number' && shopId > 0 && typeof userId === 'number' && userId > 0,
   });
 
   const flatData = useMemo(() => {
     const items = data?.pages?.flatMap(p => p.items) ?? [];
+    console.log('🔔 NotificationScreen - Flat data items:', items);
+    console.log('🔔 NotificationScreen - Total items count:', items.length);
     return items;
   }, [data]);
 
@@ -122,6 +137,17 @@ const NotificationScreen = () => {
     const unread = items.reduce((acc, it) => acc + (it?.isRead ? 0 : 1), 0);
     notificationsStore.setCount(unread);
   }, [flatData]);
+
+  // Debug logs
+  useEffect(() => {
+    console.log('🔔 NotificationScreen - Query state:', { 
+      isLoading, 
+      isError, 
+      isRefetching, 
+      hasNextPage, 
+      isFetchingNextPage 
+    });
+  }, [isLoading, isError, isRefetching, hasNextPage, isFetchingNextPage]);
 
   const handlePressNotification = useCallback(async (item: NotificationDTO) => {
     if (item.isRead) return;
