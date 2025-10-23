@@ -16,6 +16,9 @@ export type AuthData = {
   // cached shop info for convenience
   shopName?: string | null;
   shopAddress?: string | null;
+  shopToken?: string | null;
+  sepayApiKey?: string | null;
+  qrcodeUrl?: string | null;
 };
 
 const STORAGE_KEY = 'auth:data:v1';
@@ -99,8 +102,14 @@ export const clearShiftId = async (): Promise<void> => {
   await authStore.save(updated as AuthData);
 };
 
-// Fetch and persist shop info: shopName, shopAddress
-export const refreshShopInfo = async (): Promise<{ shopName: string | null; shopAddress: string | null } | null> => {
+// Fetch and persist shop info: shopName, shopAddress, shopToken, sepayApiKey, qrcodeUrl
+export const refreshShopInfo = async (): Promise<{ 
+  shopName: string | null; 
+  shopAddress: string | null; 
+  shopToken: string | null; 
+  sepayApiKey: string | null; 
+  qrcodeUrl: string | null; 
+} | null> => {
   try {
     const data = await authStore.load();
     const token = data?.accessToken ?? null;
@@ -120,20 +129,40 @@ export const refreshShopInfo = async (): Promise<{ shopName: string | null; shop
     const shop = (items as any[])[0] || null;
     const shopName: string | null = shop?.shopName ?? null;
     const shopAddress: string | null = shop?.address ?? null;
+    const shopToken: string | null = shop?.shopToken ?? null;
+    const sepayApiKey: string | null = shop?.sepayApiKey ?? null;
+    const qrcodeUrl: string | null = shop?.qrcodeUrl ?? null;
 
-    const updated: AuthData = { ...(data as AuthData), shopName, shopAddress } as AuthData;
+    const updated: AuthData = { 
+      ...(data as AuthData), 
+      shopName, 
+      shopAddress, 
+      shopToken, 
+      sepayApiKey, 
+      qrcodeUrl 
+    } as AuthData;
     await authStore.save(updated);
-    try { console.log('[AuthStore][refreshShopInfo] shopName:', shopName, 'address:', shopAddress); } catch {}
-    return { shopName, shopAddress };
+    try { console.log('[AuthStore][refreshShopInfo] shopName:', shopName, 'address:', shopAddress, 'shopToken:', shopToken ? 'yes' : 'no', 'sepayApiKey:', sepayApiKey ? 'yes' : 'no', 'qrcodeUrl:', qrcodeUrl ? 'yes' : 'no'); } catch {}
+    return { shopName, shopAddress, shopToken, sepayApiKey, qrcodeUrl };
   } catch (e) {
     return null;
   }
 };
 
-export const getShopInfo = async (): Promise<{ shopName: string | null; shopAddress: string | null }> => {
+export const getShopInfo = async (): Promise<{ 
+  shopName: string | null; 
+  shopAddress: string | null; 
+  shopToken: string | null; 
+  sepayApiKey: string | null; 
+  qrcodeUrl: string | null; 
+}> => {
   const d = await authStore.load();
   let shopName = d?.shopName ?? null;
   let shopAddress = d?.shopAddress ?? null;
+  let shopToken = d?.shopToken ?? null;
+  let sepayApiKey = d?.sepayApiKey ?? null;
+  let qrcodeUrl = d?.qrcodeUrl ?? null;
+  
   if (!shopName || !shopAddress) {
     try {
       console.log('[AuthStore][getShopInfo] missing cached info -> fetching...');
@@ -141,13 +170,16 @@ export const getShopInfo = async (): Promise<{ shopName: string | null; shopAddr
       if (info) {
         shopName = info.shopName;
         shopAddress = info.shopAddress;
+        shopToken = info.shopToken;
+        sepayApiKey = info.sepayApiKey;
+        qrcodeUrl = info.qrcodeUrl;
       }
     } catch (e) {
       try { console.log('[AuthStore][getShopInfo] refresh error:', e); } catch {}
     }
   }
-  try { console.log('[AuthStore][getShopInfo] return:', { shopName, shopAddress }); } catch {}
-  return { shopName, shopAddress };
+  try { console.log('[AuthStore][getShopInfo] return:', { shopName, shopAddress, shopToken: shopToken ? 'yes' : 'no', sepayApiKey: sepayApiKey ? 'yes' : 'no', qrcodeUrl: qrcodeUrl ? 'yes' : 'no' }); } catch {}
+  return { shopName, shopAddress, shopToken, sepayApiKey, qrcodeUrl };
 };
 
 // Fetch current open shift (closedDate is null) and persist its shiftId
@@ -298,4 +330,24 @@ export const getShopName = async (): Promise<string | null> => {
 export const getShopAddress = async (): Promise<string | null> => {
   const d = await authStore.load();
   return d?.shopAddress ?? null;
+};
+
+export const getShopToken = async (): Promise<string | null> => {
+  const d = await authStore.load();
+  return d?.shopToken ?? null;
+};
+
+export const getSepayApiKey = async (): Promise<string | null> => {
+  const d = await authStore.load();
+  return d?.sepayApiKey ?? null;
+};
+
+export const getQrcodeUrl = async (): Promise<string | null> => {
+  const d = await authStore.load();
+  return d?.qrcodeUrl ?? null;
+};
+
+export const getUsername = async (): Promise<string | null> => {
+  const d = await authStore.load();
+  return d?.username ?? null;
 };
