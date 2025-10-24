@@ -37,22 +37,25 @@ const ChatbotScreen = () => {
   const pageSize = 10;
   const [hasMore, setHasMore] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [currentShopId, setCurrentShopId] = useState<number | null>(null);
   const flatListRef = useRef<FlatList<Message>>(null);
 
   // Cache functions
-  const CACHE_KEY = 'chatbot_messages';
+  const getCacheKey = (shopId: number) => `chatbot_messages_${shopId}`;
   
-  const saveMessagesToCache = async (messages: Message[]) => {
+  const saveMessagesToCache = async (messages: Message[], shopId: number) => {
     try {
-      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(messages));
+      const cacheKey = getCacheKey(shopId);
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(messages));
     } catch (error) {
       console.error('Error saving messages to cache:', error);
     }
   };
 
-  const loadMessagesFromCache = async (): Promise<Message[]> => {
+  const loadMessagesFromCache = async (shopId: number): Promise<Message[]> => {
     try {
-      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      const cacheKey = getCacheKey(shopId);
+      const cached = await AsyncStorage.getItem(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached);
         // Convert timestamp strings back to Date objects
@@ -65,6 +68,15 @@ const ChatbotScreen = () => {
       console.error('Error loading messages from cache:', error);
     }
     return [];
+  };
+
+  const clearCacheForShop = async (shopId: number) => {
+    try {
+      const cacheKey = getCacheKey(shopId);
+      await AsyncStorage.removeItem(cacheKey);
+    } catch (error) {
+      console.error('Error clearing cache for shop:', error);
+    }
   };
 
   const quickQuestions = [
@@ -105,7 +117,7 @@ const ChatbotScreen = () => {
       
       // Load from cache first if replacing (initial load)
       if (replace) {
-        const cachedMessages = await loadMessagesFromCache();
+        const cachedMessages = await loadMessagesFromCache(shopId);
         if (cachedMessages.length > 0) {
           setMessages(cachedMessages);
           setIsFetching(false);
@@ -138,7 +150,7 @@ const ChatbotScreen = () => {
       // Save to cache
       if (replace) {
         const finalMessages = mapped;
-        await saveMessagesToCache(finalMessages);
+        await saveMessagesToCache(finalMessages, shopId);
       }
 
       setHasMore(mapped.length >= pageSize);
@@ -152,6 +164,13 @@ const ChatbotScreen = () => {
   const sendMessage = async (messageText: string) => {
     if (!messageText.trim()) return;
 
+    const token = await getAuthToken();
+    const shopId = (await getShopId()) ?? 0;
+    if (!token || !(shopId > 0)) {
+      Alert.alert('Lỗi', 'Thiếu thông tin đăng nhập hoặc shopId');
+      return;
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       text: messageText.trim(),
@@ -161,7 +180,7 @@ const ChatbotScreen = () => {
 
     setMessages(prev => {
       const newMessages = [...prev, userMessage];
-      saveMessagesToCache(newMessages);
+      saveMessagesToCache(newMessages, shopId);
       return newMessages;
     });
     setInputText('');
@@ -169,12 +188,7 @@ const ChatbotScreen = () => {
     scrollToBottom();
 
     try {
-      const token = await getAuthToken();
-      const shopId = (await getShopId()) ?? 0;
       const userId = (await getUserId()) ?? 0;
-      if (!token || !(shopId > 0)) {
-        throw new Error('Thiếu thông tin đăng nhập hoặc shopId');
-      }
 
       const res = await fetch(`${API_URL}/api/chat-messages`, {
         method: 'POST',
@@ -204,7 +218,7 @@ const ChatbotScreen = () => {
       };
       setMessages(prev => {
         const newMessages = [...prev, aiResponse];
-        saveMessagesToCache(newMessages);
+        saveMessagesToCache(newMessages, shopId);
         return newMessages;
       });
     } catch (error: any) {
@@ -216,7 +230,7 @@ const ChatbotScreen = () => {
       };
       setMessages(prev => {
         const newMessages = [...prev, aiResponse];
-        saveMessagesToCache(newMessages);
+        saveMessagesToCache(newMessages, shopId);
         return newMessages;
       });
       try { console.error('[Chatbot][sendMessage] error:', error); } catch {}
@@ -374,6 +388,13 @@ const ChatbotScreen = () => {
   };
 
   const handleQuickQuestion = async (question: string) => {
+    const token = await getAuthToken();
+    const shopId = (await getShopId()) ?? 0;
+    if (!token || !(shopId > 0)) {
+      Alert.alert('Lỗi', 'Thiếu thông tin đăng nhập hoặc shopId');
+      return;
+    }
+
     // Add user message locally (do NOT POST when using quick questions)
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -383,17 +404,12 @@ const ChatbotScreen = () => {
     };
     setMessages(prev => {
       const newMessages = [...prev, userMessage];
-      saveMessagesToCache(newMessages);
+      saveMessagesToCache(newMessages, shopId);
       return newMessages;
     });
     scrollToBottom();
     setIsLoading(true);
     try {
-      const token = await getAuthToken();
-      const shopId = (await getShopId()) ?? 0;
-      if (!token || !(shopId > 0)) {
-        throw new Error('Thiếu thông tin đăng nhập hoặc shopId');
-      }
       const path = mapQuickQuestionToPath(question);
       const res = await fetch(`${API_URL}/api/Chatbot/${shopId}/analytics/${path}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -408,7 +424,7 @@ const ChatbotScreen = () => {
       };
       setMessages(prev => {
         const newMessages = [...prev, aiResponse];
-        saveMessagesToCache(newMessages);
+        saveMessagesToCache(newMessages, shopId);
         return newMessages;
       });
     } catch (error: any) {
@@ -420,7 +436,7 @@ const ChatbotScreen = () => {
       };
       setMessages(prev => {
         const newMessages = [...prev, aiResponse];
-        saveMessagesToCache(newMessages);
+        saveMessagesToCache(newMessages, shopId);
         return newMessages;
       });
       try { console.error('[Chatbot][quick] error:', error); } catch {}
@@ -477,16 +493,42 @@ const ChatbotScreen = () => {
   useEffect(() => {
     // Load cached messages first, then fetch from server if needed
     const loadInitialMessages = async () => {
-      const cachedMessages = await loadMessagesFromCache();
-      if (cachedMessages.length > 0) {
-        setMessages(cachedMessages);
-        scrollToBottom();
+      const shopId = (await getShopId()) ?? 0;
+      if (shopId > 0) {
+        setCurrentShopId(shopId);
+        const cachedMessages = await loadMessagesFromCache(shopId);
+        if (cachedMessages.length > 0) {
+          setMessages(cachedMessages);
+          scrollToBottom();
+        }
+        // Still fetch from server to get latest messages
+        fetchMessagesPage(1, true);
       }
-      // Still fetch from server to get latest messages
-      fetchMessagesPage(1, true);
     };
     loadInitialMessages();
   }, []);
+
+  // Watch for shop changes and clear cache if needed
+  useEffect(() => {
+    const checkShopChange = async () => {
+      const shopId = (await getShopId()) ?? 0;
+      if (shopId > 0 && currentShopId !== null && currentShopId !== shopId) {
+        // Shop changed, clear messages and load new shop's messages
+        setMessages([]);
+        setCurrentShopId(shopId);
+        const cachedMessages = await loadMessagesFromCache(shopId);
+        if (cachedMessages.length > 0) {
+          setMessages(cachedMessages);
+          scrollToBottom();
+        }
+        // Fetch latest messages from server
+        fetchMessagesPage(1, true);
+      }
+    };
+    
+    const interval = setInterval(checkShopChange, 1000); // Check every second
+    return () => clearInterval(interval);
+  }, [currentShopId]);
 
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
