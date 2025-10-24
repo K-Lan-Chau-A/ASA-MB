@@ -5,7 +5,7 @@ import { useNavigation, NavigationProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList, TabParamList } from '../types/navigation';
 import API_URL from '../config/api';
-import { getShiftId, getUserId, getShopId, getAuthToken, setShiftId } from '../services/AuthStore';
+import { getShiftId, getUserId, getShopId, getAuthToken, setShiftId, refreshOpenShiftId } from '../services/AuthStore';
 
 // Import screens
 import HomeScreen from '../screens/HomeScreen';
@@ -36,15 +36,48 @@ const AddOrderButton = () => {
 
   const handleOrderPress = useCallback(async () => {
     try {
-      const existingShiftId = await getShiftId();
+      // First check if we have a local shiftId
+      let existingShiftId = await getShiftId();
+      
       if (Number(existingShiftId) > 0) {
-        // Already have a shift in local storage → continue using it
-        navigation.navigate('Order');
-        return;
+        // We have a local shiftId, but let's verify it's still valid by checking server
+        try {
+          const serverShiftId = await refreshOpenShiftId();
+          if (serverShiftId && serverShiftId > 0) {
+            // Server confirms there's an open shift, use it
+            navigation.navigate('Order');
+            return;
+          } else {
+            // Server says no open shift, clear local shiftId and prompt to open new one
+            console.log('[BottomNavigation] Local shiftId exists but server has no open shift, clearing local shiftId');
+            // Clear the invalid shiftId by setting it to 0 or null
+            await setShiftId(0);
+          }
+        } catch (error) {
+          console.log('[BottomNavigation] Error checking server shift, using local shiftId:', error);
+          // If server check fails, use local shiftId anyway
+          navigation.navigate('Order');
+          return;
+        }
       }
-      // No local shiftId → prompt to open shift
+      
+      // No valid local shiftId, check if there's an open shift on server
+      try {
+        const serverShiftId = await refreshOpenShiftId();
+        if (serverShiftId && serverShiftId > 0) {
+          // Server has an open shift, use it
+          console.log('[BottomNavigation] Found open shift on server:', serverShiftId);
+          navigation.navigate('Order');
+          return;
+        }
+      } catch (error) {
+        console.log('[BottomNavigation] Error checking server for open shift:', error);
+      }
+      
+      // No open shift found anywhere, prompt to open new shift
       setOpenShiftVisible(true);
-    } catch {
+    } catch (error) {
+      console.log('[BottomNavigation] Error in handleOrderPress:', error);
       setOpenShiftVisible(true);
     }
   }, [navigation]);
@@ -53,6 +86,16 @@ const AddOrderButton = () => {
     if (openingShiftSubmitting) return;
     setOpeningShiftSubmitting(true);
     try {
+      // First check if there's already an open shift on server
+      const existingOpenShift = await refreshOpenShiftId();
+      if (existingOpenShift && existingOpenShift > 0) {
+        // There's already an open shift, use it instead of creating new one
+        console.log('[OpenShift] Found existing open shift:', existingOpenShift);
+        setOpenShiftVisible(false);
+        navigation.navigate('Order');
+        return;
+      }
+
       const token = await getAuthToken();
       const shopId = (await getShopId()) ?? 0;
       const userId = (await getUserId()) ?? 0;
@@ -93,6 +136,18 @@ const AddOrderButton = () => {
       const messageText = typeof e?.message === 'string' ? e.message : '';
       const alreadyOpenHint = 'already has an open shift';
       if (messageText.toLowerCase().includes(alreadyOpenHint)) {
+        // Try to get the existing open shift instead of showing error
+        try {
+          const existingShift = await refreshOpenShiftId();
+          if (existingShift && existingShift > 0) {
+            console.log('[OpenShift] Using existing shift after error:', existingShift);
+            setOpenShiftVisible(false);
+            navigation.navigate('Order');
+            return;
+          }
+        } catch (refreshError) {
+          console.log('[OpenShift] Error refreshing shift after conflict:', refreshError);
+        }
         // Show localized message as requested
         Alert.alert('Thông báo', 'Bạn phải đóng ca hiện tại mới mở ca được');
       } else {

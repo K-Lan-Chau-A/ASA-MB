@@ -11,7 +11,6 @@ import {
   FlatList,
   Image
 } from 'react-native';
-import { launchImageLibrary } from 'react-native-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -80,9 +79,6 @@ const SettingScreen = () => {
   const [selectedWard, setSelectedWard] = useState<Ward | null>(null);
   const [selectedBank, setSelectedBank] = useState<Bank | null>(null);
   const [bankAccountNumber, setBankAccountNumber] = useState('');
-  const [qrCodeUrl, setQrCodeUrl] = useState('');
-  const [qrCodeImageError, setQrCodeImageError] = useState(false);
-  const [isUploadingQrCode, setIsUploadingQrCode] = useState(false);
   
   // Modal states
   const [showProvinceModal, setShowProvinceModal] = useState(false);
@@ -193,7 +189,7 @@ const SettingScreen = () => {
         shopToken: shopData.shopToken || "",
         createdAt: shopData.createdAt,
         status: shopData.status,
-        qrcodeUrl: qrCodeUrl || shopData.qrcodeUrl || null,
+        qrcodeUrl: shopData.qrcodeUrl || null,
         sepayApiKey: shopData.sepayApiKey || null,
         currentRequest: shopData.currentRequest,
         currentAccount: shopData.currentAccount,
@@ -244,7 +240,7 @@ const SettingScreen = () => {
     } finally {
       setIsSaving(false);
     }
-  }, [shopData, shopName, houseNumber, selectedProvince, selectedWard, selectedBank, bankAccountNumber, qrCodeUrl, loadShopData]);
+  }, [shopData, shopName, houseNumber, selectedProvince, selectedWard, selectedBank, bankAccountNumber, loadShopData]);
 
   // Auto-fill form data when entering edit mode
   const handleEditPress = useCallback(() => {
@@ -267,103 +263,10 @@ const SettingScreen = () => {
       }
     }
     setBankAccountNumber(shopData.bankNum || '');
-    setQrCodeUrl(shopData.qrcodeUrl || '');
-    setQrCodeImageError(false);
     
     setIsEditing(true);
   }, [shopData, banks, parseAddress]);
 
-  // Upload QR code to Cloudinary
-  const uploadQrCodeToCloudinary = useCallback(async (imageUri: string) => {
-    try {
-      setIsUploadingQrCode(true);
-      
-      const formData = new FormData();
-      formData.append('file', {
-        uri: imageUri,
-        type: 'image/jpeg',
-        name: 'qr-code.jpg',
-      } as any);
-      // Try ASAqrCode preset first, then fallback to others
-      const presetsToTry = ['ASAqrCode', 'ml_default', 'unsigned', 'public', 'qr_codes'];
-      let uploadSuccess = false;
-      let uploadedUrl = '';
-      
-      for (const preset of presetsToTry) {
-        try {
-          const testFormData = new FormData();
-          testFormData.append('file', {
-            uri: imageUri,
-            type: 'image/jpeg',
-            name: 'qr-code.jpg',
-          } as any);
-          testFormData.append('upload_preset', preset);
-          testFormData.append('folder', 'qr-codes');
-
-          console.log(`Trying upload preset: ${preset}`);
-
-          const response = await fetch('https://api.cloudinary.com/v1_1/dxwyyesrw/image/upload', {
-            method: 'POST',
-            body: testFormData,
-          });
-
-          if (response.ok) {
-            const result = await response.json();
-            uploadedUrl = result.secure_url;
-            uploadSuccess = true;
-            console.log(`Upload successful with preset: ${preset}`);
-            break;
-          } else {
-            const errorText = await response.text();
-            console.log(`Preset ${preset} failed:`, response.status, errorText);
-          }
-        } catch (error) {
-          console.log(`Preset ${preset} error:`, error);
-        }
-      }
-      
-      if (!uploadSuccess) {
-        throw new Error('All upload presets failed. Please check your Cloudinary settings.');
-      }
-      
-      return uploadedUrl;
-    } catch (error) {
-      console.error('Cloudinary upload error:', error);
-      throw error;
-    } finally {
-      setIsUploadingQrCode(false);
-    }
-  }, []);
-
-  // Handle QR code image picker
-  const handleQrCodeImagePicker = useCallback(() => {
-    const options = {
-      mediaType: 'photo' as const,
-      quality: 0.8 as const,
-      maxWidth: 1000,
-      maxHeight: 1000,
-    };
-
-    launchImageLibrary(options, async (response) => {
-      if (response.didCancel || response.errorMessage) {
-        return;
-      }
-
-      if (response.assets && response.assets[0]) {
-        const imageUri = response.assets[0].uri;
-        if (imageUri) {
-          try {
-            const uploadedUrl = await uploadQrCodeToCloudinary(imageUri);
-            setQrCodeUrl(uploadedUrl);
-            setQrCodeImageError(false);
-            Alert.alert('Thành công', 'Đã tải QR code lên thành công!');
-          } catch (error) {
-            Alert.alert('Lỗi', 'Không thể tải ảnh lên. Vui lòng thử lại.');
-          }
-        }
-      }
-    });
-  }, [uploadQrCodeToCloudinary]);
 
   useEffect(() => {
     loadShopData();
@@ -564,59 +467,6 @@ const SettingScreen = () => {
             </View>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>QR Code</Text>
-            
-            {isEditing ? (
-              <View style={styles.qrCodeEditContainer}>
-              <TouchableOpacity
-                style={styles.uploadButton}
-                onPress={handleQrCodeImagePicker}
-                disabled={isUploadingQrCode}
-              >
-                <Icon name="camera" size={20} color="#009DA5" />
-                <Text style={styles.uploadButtonText}>
-                  {isUploadingQrCode ? 'Đang tải...' : 'Tải QR Code lên'}
-                </Text>
-              </TouchableOpacity>
-                
-                {qrCodeUrl && (
-                  <View style={styles.qrCodePreview}>
-                    <Text style={styles.subLabel}>Xem trước:</Text>
-                    <Image 
-                      source={{ uri: qrCodeUrl }} 
-                      style={styles.qrCodeImageSmall}
-                      resizeMode="contain"
-                      onError={() => setQrCodeImageError(true)}
-                    />
-                  </View>
-                )}
-              </View>
-            ) : (
-              <View style={styles.qrCodeDisplayContainer}>
-                {shopData?.qrcodeUrl && !qrCodeImageError ? (
-                  <Image 
-                    source={{ uri: shopData.qrcodeUrl }} 
-                    style={styles.qrCodeImage}
-                    resizeMode="contain"
-                    onError={() => setQrCodeImageError(true)}
-                  />
-                ) : (
-                  <View style={styles.qrCodePlaceholder}>
-                    <Icon name="qrcode" size={48} color="#CCC" />
-                    <Text style={styles.qrCodePlaceholderText}>
-                      {shopData?.qrcodeUrl ? 'Không thể hiển thị QR Code' : 'Chưa có QR Code'}
-                    </Text>
-                    {shopData?.qrcodeUrl && (
-                      <Text style={styles.qrCodeUrlText} numberOfLines={2}>
-                        {shopData.qrcodeUrl}
-                      </Text>
-                    )}
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Thông tin khác</Text>
@@ -889,68 +739,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     lineHeight: 22,
-  },
-  qrCodeEditContainer: {
-    alignItems: 'center',
-  },
-  uploadButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#F0F9FA',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#009DA5',
-    borderStyle: 'dashed',
-  },
-  uploadButtonText: {
-    marginLeft: 8,
-    fontSize: 16,
-    color: '#009DA5',
-    fontWeight: '500',
-  },
-  qrCodePreview: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  qrCodeImageSmall: {
-    width: 100,
-    height: 100,
-    marginTop: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
-  },
-  qrCodeDisplayContainer: {
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#FAFAFA',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
-  },
-  qrCodeImage: {
-    width: 200,
-    height: 200,
-    borderRadius: 8,
-  },
-  qrCodePlaceholder: {
-    alignItems: 'center',
-    padding: 20,
-  },
-  qrCodePlaceholderText: {
-    fontSize: 16,
-    color: '#999',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  qrCodeUrlText: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 8,
-    textAlign: 'center',
-    fontStyle: 'italic',
   },
 });
 

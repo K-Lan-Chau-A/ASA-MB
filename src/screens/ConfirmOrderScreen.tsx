@@ -20,7 +20,7 @@ import { RootStackParamList } from '../types/navigation';
 import { clearGlobalOrderState } from './OrderScreen';
 import { Picker } from '@react-native-picker/picker';
 import API_URL from '../config/api';
-import { getAuthToken, getShopId, getShiftId, getSepayApiKey, getShopToken, getQrcodeUrl } from '../services/AuthStore';
+import { getAuthToken, getShopId, getShiftId, getSepayApiKey, getShopToken } from '../services/AuthStore';
 import Tts from 'react-native-tts';
 
 interface Product {
@@ -339,45 +339,10 @@ const ConfirmOrderScreen = () => {
         
         // Show appropriate modal based on payment method
         if (selectedPaymentMethod === 'bank_transfer') {
-          // Check if shop has Sepay API key and token
-          const sepayApiKey = await getSepayApiKey();
-          const shopToken = await getShopToken();
-          
-          if (sepayApiKey && shopToken) {
-            // Use Sepay API for dynamic QR with callback
-            await fetchQRCode(Number(envelope.orderId));
-            setIsUsingStaticQR(false);
-            setShowManualConfirmButton(false);
-          } else {
-            // Use static QR code from shop settings
-            const qrcodeUrl = await getQrcodeUrl();
-            if (!qrcodeUrl) {
-              Alert.alert(
-                'Thiếu QR Code',
-                'Cửa hàng chưa có QR Code thanh toán. Vui lòng cập nhật QR Code trong phần Cài đặt.',
-                [
-                  { text: 'Hủy', style: 'cancel' },
-                  { 
-                    text: 'Đến Cài đặt', 
-                    onPress: () => {
-                      navigation.navigate('Setting');
-                    }
-                  }
-                ]
-              );
-              return;
-            }
-            
-            // Use static QR code
-            setQrData({ 
-              url: qrcodeUrl, 
-              amount: finalTotal, 
-              orderId: Number(envelope.orderId) 
-            });
-            setIsUsingStaticQR(true);
-            setShowManualConfirmButton(true);
-            setShowQRModal(true);
-          }
+          // Use Sepay API for dynamic QR with callback
+          await fetchQRCode(Number(envelope.orderId));
+          setIsUsingStaticQR(false);
+          setShowManualConfirmButton(false);
           return; // Don't show success modal yet
         } else if (selectedPaymentMethod === 'nfc_card') {
           // Show NFC modal
@@ -460,15 +425,34 @@ const ConfirmOrderScreen = () => {
     setSelectedVoucherId(null);
   };
 
-  const handlePayment = () => {
+  const handlePayment = async () => {
     if (finalTotal <= 0) {
       Alert.alert('Lỗi', 'Tổng thanh toán phải lớn hơn 0');
       return;
     }
     
-    // For all payment methods, create order first, then show appropriate modal
+    // For bank transfer, check bank info first before creating order
     if (selectedPaymentMethod === 'bank_transfer') {
-      // Immediately open QR modal with spinner, then create order and load QR
+      const bankInfoCheck = await checkBankInfoCompleteness();
+      
+      if (!bankInfoCheck.isValid) {
+        Alert.alert(
+          'Thiếu thông tin ngân hàng',
+          `${bankInfoCheck.message}. Bạn cần cập nhật thông tin ngân hàng trong phần Cài đặt.`,
+          [
+            { text: 'Hủy', style: 'cancel' },
+            { 
+              text: 'Đến Cài đặt', 
+              onPress: () => {
+                navigation.navigate('Setting');
+              }
+            }
+          ]
+        );
+        return;
+      }
+      
+      // Bank info is available, proceed with order creation
       setShowQRModal(true);
       setQrData(null);
       submitOrder();
@@ -483,26 +467,20 @@ const ConfirmOrderScreen = () => {
     }
   };
 
-  const handleQRPaymentConfirm = async () => {
-    if (isSubmitting) return;
+  // Helper function to check bank info completeness
+  const checkBankInfoCompleteness = async () => {
+    const sepayApiKey = await getSepayApiKey();
+    const shopToken = await getShopToken();
     
-    if (isUsingStaticQR) {
-      // Manual confirmation for static QR code
-      Alert.alert(
-        'Xác nhận thanh toán',
-        'Khách hàng đã thanh toán thành công?',
-        [
-          { text: 'Chưa', style: 'cancel' },
-          { 
-            text: 'Đã thanh toán', 
-            onPress: () => {
-              setShowQRModal(false);
-              setShowSuccessModal(true);
-            }
-          }
-        ]
-      );
+    if (!sepayApiKey) {
+      return { isValid: false, message: 'Thiếu Sepay API Key' };
     }
+    
+    if (!shopToken) {
+      return { isValid: false, message: 'Thiếu Shop Token' };
+    }
+    
+    return { isValid: true, message: 'OK' };
   };
 
   const fetchQRCode = async (orderId: number) => {
@@ -522,10 +500,36 @@ const ConfirmOrderScreen = () => {
         // start polling order status until paid (only for Sepay dynamic QR)
         startPollOrderPaidStatus(data.orderId || orderId);
       } else {
-        throw new Error(data?.message || 'Không thể tạo mã QR');
+        // Convert backend error messages to Vietnamese
+        let errorMessage = data?.message || 'Không thể tạo mã QR';
+        
+        if (errorMessage.includes('Missing Shop bank info') || errorMessage.includes('BankCode') || errorMessage.includes('BankAccount')) {
+          errorMessage = 'Thiếu thông tin ngân hàng của cửa hàng';
+        } else if (errorMessage.includes('Invalid API key') || errorMessage.includes('Unauthorized')) {
+          errorMessage = 'API key không hợp lệ hoặc đã hết hạn';
+        } else if (errorMessage.includes('Network') || errorMessage.includes('Connection')) {
+          errorMessage = 'Lỗi kết nối mạng';
+        } else if (errorMessage.includes('Server error') || errorMessage.includes('Internal')) {
+          errorMessage = 'Lỗi máy chủ';
+        }
+        
+        throw new Error(errorMessage);
       }
     } catch (e: any) {
-      Alert.alert('Lỗi', e?.message ?? 'Không thể tạo mã QR thanh toán');
+      // Convert common error messages to Vietnamese
+      let errorMessage = e?.message ?? 'Không thể tạo mã QR thanh toán';
+      
+      if (errorMessage.includes('Missing Shop bank info') || errorMessage.includes('BankCode') || errorMessage.includes('BankAccount')) {
+        errorMessage = 'Thiếu thông tin ngân hàng của cửa hàng';
+      } else if (errorMessage.includes('Invalid API key') || errorMessage.includes('Unauthorized')) {
+        errorMessage = 'API key không hợp lệ hoặc đã hết hạn';
+      } else if (errorMessage.includes('Network') || errorMessage.includes('Connection')) {
+        errorMessage = 'Lỗi kết nối mạng';
+      } else if (errorMessage.includes('Server error') || errorMessage.includes('Internal')) {
+        errorMessage = 'Lỗi máy chủ';
+      }
+      
+      Alert.alert('Lỗi', errorMessage);
     }
   };
 
@@ -967,22 +971,11 @@ const ConfirmOrderScreen = () => {
         <View style={styles.modalOverlay}>
           <View style={styles.qrModalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {isUsingStaticQR ? 'QR Code thanh toán' : 'Quét mã để thanh toán'}
-              </Text>
+              <Text style={styles.modalTitle}>Quét mã để thanh toán</Text>
               <TouchableOpacity onPress={() => setShowQRModal(false)}>
                 <Icon name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
-            
-            {isUsingStaticQR && (
-              <View style={styles.staticQRNotice}>
-                <Icon name="information" size={16} color="#FF9800" />
-                <Text style={styles.staticQRNoticeText}>
-                  QR Code tĩnh - Cần xác nhận thanh toán thủ công
-                </Text>
-              </View>
-            )}
             
             <View style={styles.qrCodeContainer}>
               <View style={styles.qrCodeWrapper}>
@@ -1009,12 +1002,6 @@ const ConfirmOrderScreen = () => {
             </View>
             
             <View style={styles.modalButtons}>
-              {showManualConfirmButton && (
-                <TouchableOpacity style={styles.modalConfirmButton} onPress={handleQRPaymentConfirm}>
-                  <Icon name="check" size={18} color="#FFFFFF" />
-                  <Text style={styles.modalConfirmButtonText}>Xác nhận thanh toán</Text>
-                </TouchableOpacity>
-              )}
               <TouchableOpacity style={styles.modalCancelButton} onPress={() => setShowQRModal(false)}>
                 <Text style={styles.modalCancelButtonText}>Hủy bỏ</Text>
               </TouchableOpacity>
@@ -1751,23 +1738,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  staticQRNotice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF3E0',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#FF9800',
-  },
-  staticQRNoticeText: {
-    fontSize: 14,
-    color: '#E65100',
-    marginLeft: 8,
-    fontWeight: '500',
   },
   modalCancelButton: {
     backgroundColor: '#FFFFFF',
