@@ -570,8 +570,8 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
   }, [updateProduct]);
 
   const handleScanBarcode = useCallback(() => {
-    // Điều hướng tới màn hình quét mã, giống OrderScreen
-    navigation.navigate('Scanner');
+    // Điều hướng tới màn hình quét mã và chỉ định quay lại AddProduct
+    navigation.navigate('Scanner', { returnScreen: 'AddProduct' });
   }, [navigation]);
 
   const handleSaveProduct = useCallback(() => {

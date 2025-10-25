@@ -9,8 +9,6 @@ import {
   Alert,
   TouchableWithoutFeedback,
   Keyboard,
-  KeyboardAvoidingView,
-  Platform,
   Image,
   Modal,
 } from 'react-native';
@@ -497,53 +495,48 @@ const ProductsScreen = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom','left','right']}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'height' : 'padding'} style={{ flex: 1 }}>
-      <TouchableWithoutFeedback onPress={handleTapOutside}>
-      <View style={styles.content} >
-      
-
-          {/* Search + Add in one row */}
-          <View style={styles.searchRow}>
-            <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-              <View style={[styles.searchContainer, { flex: 1 }] }>
-                <Icon name="magnify" size={20} color="#666" />
-                <TextInput
-                  ref={searchInputRef}
-                  style={styles.searchInput}
-                  placeholder="Tìm sản phẩm, mã vạch..."
-                  value={searchText}
-                  onChangeText={handleSearchChange}
-                  onFocus={handleSearchFocus}
-                  onBlur={handleSearchBlur}
-                  returnKeyType="search"
-                  clearButtonMode="while-editing"
-                />
-                {searchText.length > 0 && (
-                  <TouchableOpacity onPress={clearSearch}>
-                    <Icon name="close-circle" size={20} color="#999" />
-                  </TouchableOpacity>
-                )}
-              </View>
-            </TouchableWithoutFeedback>
-            <TouchableOpacity style={styles.qrButton} onPress={handleScanBarcode}>
-              <Icon name="qrcode-scan" size={20} color="#009DA5" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Categories */}
-          <View style={styles.categoriesContainer}>
-            <FlatList
-              data={categoryNames}
-              renderItem={renderCategory}
-              keyExtractor={keyExtractor}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.categoriesList}
+      <View style={styles.content}>
+        {/* Search + Add in one row */}
+        <View style={styles.searchRow}>
+          <View style={[styles.searchContainer, { flex: 1 }]}>
+            <Icon name="magnify" size={20} color="#666" />
+            <TextInput
+              ref={searchInputRef}
+              style={styles.searchInput}
+              placeholder="Tìm sản phẩm, mã vạch..."
+              value={searchText}
+              onChangeText={handleSearchChange}
+              onFocus={handleSearchFocus}
+              onBlur={handleSearchBlur}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+              onSubmitEditing={handleTapOutside}
             />
+            {searchText.length > 0 && (
+              <TouchableOpacity onPress={clearSearch}>
+                <Icon name="close-circle" size={20} color="#999" />
+              </TouchableOpacity>
+            )}
           </View>
+          <TouchableOpacity style={styles.qrButton} onPress={handleScanBarcode}>
+            <Icon name="qrcode-scan" size={20} color="#009DA5" />
+          </TouchableOpacity>
+        </View>
 
-          {/* Product List */}
-          <View style={styles.productList}>
+        {/* Categories */}
+        <View style={styles.categoriesContainer}>
+          <FlatList
+            data={categoryNames}
+            renderItem={renderCategory}
+            keyExtractor={keyExtractor}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoriesList}
+          />
+        </View>
+
+        {/* Product List */}
+        <View style={styles.productList}>
             {isLoading || queryLoading ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyText}>Đang tải sản phẩm...</Text>
@@ -594,10 +587,8 @@ const ProductsScreen = () => {
                 contentContainerStyle={[styles.productListContent, { paddingBottom: isKeyboardVisible ? 0 : (insets.bottom || 0) }]}
               />
             )}
-          </View>
+        </View>
       </View>
-      </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };

@@ -2,7 +2,7 @@ export type RootStackParamList = {
   Login: undefined;
   MainApp: { orderCompleted?: boolean } | undefined;
   Notification: undefined;
-  Scanner: undefined;
+  Scanner: { returnScreen?: 'Order' | 'AddProduct' } | undefined;
   ChatbotScreen: undefined;
   PromotionScreen: undefined;
   VoucherScreen: undefined;

@@ -531,7 +531,7 @@ const OrderScreen = () => {
   const totalAmount = useMemo(() => getTotalAmount(), [getTotalAmount]);
 
   const handleScanBarcode = useCallback(() => {
-    navigation.navigate('Scanner');
+    navigation.navigate('Scanner', { returnScreen: 'Order' });
   }, [navigation]);
 
   const handleSearchChange = useCallback((text: string) => {

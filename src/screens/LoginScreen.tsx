@@ -33,10 +33,14 @@ const LoginScreen = () => {
   const { fcmToken, loading } = useFCMToken();
 
   useEffect(() => {
+    console.log('🚀 LoginScreen mounted, starting initialization...');
+    
     const checkDeviceAndInitFCM = async () => {
       try {
+        console.log('📱 Checking device type...');
         // Check if device is emulator
         const emulatorStatus = await DeviceInfo.isEmulator();
+        console.log('📱 Device check result:', { isEmulator: emulatorStatus });
         setIsEmulator(emulatorStatus);
         
         if (emulatorStatus) {
@@ -47,44 +51,80 @@ const LoginScreen = () => {
         // Only initialize FCM on real devices
         console.log('🚀 Running on real device - initializing FCM');
         await fcmService.init();
+        console.log('✅ FCM service initialized');
+        
         const token = await fcmService.getFCMToken();
         if (token) {
-          console.log('FCM Token initialized:', token);
+          console.log('✅ FCM Token initialized:', token.substring(0, 30) + '...');
+        } else {
+          console.log('⚠️ FCM Token is null/undefined');
         }
       } catch (error) {
-        console.error('Error checking device or initializing FCM:', error);
+        console.error('🚨 Error checking device or initializing FCM:', error);
+        console.error('🚨 Error details:', {
+          name: (error as any)?.name,
+          message: (error as any)?.message,
+          stack: (error as any)?.stack
+        });
       }
     };
 
     checkDeviceAndInitFCM();
+    
     // Auto-redirect if token exists, else try saved creds. Hide form until done.
     (async () => {
       try {
+        console.log('🔍 Checking for existing session...');
         const session = await authStore.load();
         if (session?.accessToken) {
+          console.log('✅ Found existing session, auto-redirecting to MainApp');
           navigation.reset({ index: 0, routes: [{ name: 'MainApp' }] });
           return;
         }
+        
+        console.log('🔍 No session found, checking saved credentials...');
         const creds = await loadCredentials();
         if (creds?.remember && creds.username && creds.password) {
+          console.log('✅ Found saved credentials, auto-logging in...');
           setUsername(creds.username || '');
           setPassword(creds.password || '');
           setRemember(true);
-          try { await handleLoginInternal(creds.username, creds.password, true); return; } catch {}
+          try { 
+            await handleLoginInternal(creds.username, creds.password, true); 
+            return; 
+          } catch (e) {
+            console.log('⚠️ Auto-login failed:', e);
+          }
+        } else {
+          console.log('ℹ️ No saved credentials found');
         }
       } finally {
+        console.log('🏁 Boot sequence complete, showing login form');
         setBooting(false);
       }
     })();
   }, []);
 
   const handleLoginInternal = async (u: string, p: string, silent?: boolean) => {
+    console.log('🔐 handleLoginInternal START', { 
+      username: u, 
+      passwordLength: p?.length, 
+      silent, 
+      isEmulator,
+      fcmToken: fcmToken?.substring(0, 20) + '...',
+      API_URL 
+    });
+    
     if (!u || !p) {
+      console.log('❌ Missing username or password');
       if (!silent) Alert.alert('Lỗi', 'Vui lòng nhập tên đăng nhập và mật khẩu.');
       return;
     }
+    
     if (!silent) setIsLoading(true);
+    
     try {
+      console.log('📡 Calling login API...', `${API_URL}/api/authentication/login`);
       const response = await fetch(`${API_URL}/api/authentication/login`, {
         method: 'POST',
         headers: {
@@ -92,7 +132,10 @@ const LoginScreen = () => {
         },
         body: JSON.stringify({ username: u, password: p }),
       });
+      console.log('📡 API Response received', { status: response.status, ok: response.ok });
+      
       const result = await response.json();
+      console.log('📡 API Result parsed', { success: result.success, message: result.message });
       if (result.success) {
         if (remember) {
           await saveCredentials({ username: u, password: p, remember: true });
@@ -129,33 +172,59 @@ const LoginScreen = () => {
         } catch {}
         // Register FCM token after successful login
         try {
+          console.log('🔔 Registering FCM token...', { isEmulator, hasFcmToken: !!fcmToken });
           if (!isEmulator) {
             const tokenToSend = fcmToken || (await fcmService.getFCMToken().catch(() => null));
+            console.log('🔔 Token to send:', tokenToSend?.substring(0, 20) + '...');
             if (tokenToSend) {
               const derivedUserId = result?.data?.userId ?? 0;
               await fcmService.registerFCMToken(derivedUserId, tokenToSend, null);
+              console.log('✅ FCM token registered successfully');
+            } else {
+              console.log('⚠️ No FCM token to register');
             }
+          } else {
+            console.log('⏭️ Skipping FCM registration (emulator)');
           }
         } catch (error) {
           console.error('🔥 FCM registration error:', error);
         }
+        console.log('✅ Login successful, navigating to MainApp');
         navigation.reset({ index: 0, routes: [{ name: 'MainApp' }] });
       } else if (!silent) {
+        console.log('❌ Login failed:', result.message);
         const errorMessage = result.message === 'Invalid Username or Password' ? 'Sai tên đăng nhập hoặc mật khẩu' : result.message;
         Alert.alert('Lỗi', errorMessage);
       }
     } catch (error) {
+      console.error('🚨 LOGIN ERROR CAUGHT:', error);
+      console.error('🚨 Error type:', typeof error);
+      console.error('🚨 Error name:', (error as any)?.name);
+      console.error('🚨 Error message:', (error as any)?.message);
+      console.error('🚨 Error stack:', (error as any)?.stack);
       if (!silent) Alert.alert('Lỗi', 'Đã xảy ra lỗi. Vui lòng thử lại sau.');
     } finally {
+      console.log('🏁 handleLoginInternal END', { silent, isLoading });
       if (!silent) setIsLoading(false);
     }
   };
 
   const handleLogin = async () => {
+    console.log('👆 Login button pressed!', { 
+      username, 
+      passwordLength: password?.length,
+      isEmulator,
+      fcmToken: fcmToken?.substring(0, 20) + '...',
+      loading 
+    });
+    
     if (!username || !password) {
+      console.log('❌ Validation failed: missing credentials');
       Alert.alert('Lỗi', 'Vui lòng nhập tên đăng nhập và mật khẩu.');
       return;
     }
+    
+    console.log('✅ Validation passed, calling handleLoginInternal...');
     await handleLoginInternal(username, password);
   };
 

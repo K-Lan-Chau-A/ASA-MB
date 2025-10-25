@@ -10,13 +10,14 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera, useCameraDevice, useCodeScanner } from 'react-native-vision-camera';
-import { useNavigation, NavigationProp } from '@react-navigation/native';
+import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import { RootStackParamList } from '../types/navigation';
 
 const ScannerScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'Scanner'>>();
   const insets = useSafeAreaInsets();
   const [hasPermission, setHasPermission] = useState<string>('not-determined');
   const [isLoadingDevice, setIsLoadingDevice] = useState(true);
@@ -115,16 +116,24 @@ const ScannerScreen = () => {
   const handleBarCodeScanned = useCallback((code: string, codeType?: string) => {
     console.log('📱 Barcode scanned:', code, 'Type:', codeType);
     
-    // Go back to OrderScreen với mã đã quét
-    console.log('📱 Automatically adding product to order:', code);
+    const returnScreen = route.params?.returnScreen;
     
-    // Sử dụng navigate với merge: true để preserve existing params
-    navigation.navigate('Order', { 
-      scannedProduct: { barcode: code, type: codeType },
-      // Thêm timestamp để đảm bảo useEffect trigger
-      scanTimestamp: Date.now()
-    });
-  }, [navigation]);
+    if (returnScreen === 'AddProduct') {
+      // Navigate back to AddProduct screen with barcode
+      console.log('📱 Returning to AddProduct with barcode:', code);
+      navigation.navigate('AddProduct', { barcode: code });
+    } else {
+      // Default: Go back to OrderScreen với mã đã quét
+      console.log('📱 Automatically adding product to order:', code);
+      
+      // Sử dụng navigate với merge: true để preserve existing params
+      navigation.navigate('Order', { 
+        scannedProduct: { barcode: code, type: codeType },
+        // Thêm timestamp để đảm bảo useEffect trigger
+        scanTimestamp: Date.now()
+      });
+    }
+  }, [navigation, route.params?.returnScreen]);
 
   const EmulatorTestScreen = () => (
     <View style={styles.container}>
