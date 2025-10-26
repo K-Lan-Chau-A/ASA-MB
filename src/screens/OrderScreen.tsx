@@ -262,8 +262,10 @@ const fetchAllProducts = async (shopId: number): Promise<AvailableProduct[]> => 
         }))
       : [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true, availableQuantity }];
     const selectedUnit = (units.find(u => u.isBaseUnit) || units[0]).unitName;
+    // Create unique ID: prefer actual ID, then timestamp + index as fallback
+    const uniqueId = p.id ?? p.productId ?? `${Date.now()}-${idx}`;
     return {
-      id: String(p.id ?? p.productId ?? idx + 1),
+      id: String(uniqueId),
       name: String(p.productName ?? p.name ?? 'Sản phẩm'),
       price: Number(p.price ?? 0),
       barcode: p.barcode ? String(p.barcode) : undefined,

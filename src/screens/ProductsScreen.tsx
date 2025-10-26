@@ -250,8 +250,13 @@ const ProductsScreen = () => {
         description: String(cat.description ?? ''),
       }));
       
-      console.log('📂 Mapped categories:', mappedCategories);
-      setCategories(mappedCategories);
+      // Remove duplicate categories by categoryId
+      const uniqueCategories = Array.from(
+        new Map(mappedCategories.map(cat => [cat.categoryId, cat])).values()
+      );
+      
+      console.log('📂 Mapped categories:', uniqueCategories);
+      setCategories(uniqueCategories);
     } catch (error) {
       console.error('Failed to load categories:', error);
     }
@@ -277,9 +282,13 @@ const ProductsScreen = () => {
             const parsed = JSON.parse(raw);
             const ts: number = Number(parsed?.ts || 0);
             const items: Product[] = Array.isArray(parsed?.items) ? parsed.items : [];
+            // Deduplicate products by id
+            const uniqueItems = Array.from(
+              new Map(items.map(p => [p.id, p])).values()
+            );
             const fresh = Date.now() - ts < CACHE_TTL_MS;
-            if (items.length && fresh) {
-              setProducts(items);
+            if (uniqueItems.length && fresh) {
+              setProducts(uniqueItems);
               if (showLoader) setIsLoading(false);
               return;
             }
@@ -323,7 +332,18 @@ const ProductsScreen = () => {
       selectedUnit: 'Cái',
     }));
 
-    setProducts(prev => (append ? [...prev, ...mapped] : mapped));
+    setProducts(prev => {
+      if (append) {
+        // Remove duplicates by id
+        const existingIds = new Set(prev.map(p => p.id));
+        const uniqueNew = mapped.filter(p => !existingIds.has(p.id));
+        const combined = [...prev, ...uniqueNew];
+        // Deduplicate entire array once more to be safe
+        return Array.from(new Map(combined.map(p => [p.id, p])).values());
+      }
+      // Deduplicate initial load as well
+      return Array.from(new Map(mapped.map(p => [p.id, p])).values());
+    });
 
     // hasNext: based on totalPages if available, or length==pageSize heuristic
     const more = totalPages ? targetPage < totalPages : (items.length === pageSize);
@@ -334,12 +354,16 @@ const ProductsScreen = () => {
     try {
       const cacheKey = `products:${shopId}:v2`;
       const existingRaw = await AsyncStorage.getItem(cacheKey);
-      let merged: Product[] = append && existingRaw ? (JSON.parse(existingRaw)?.items || []) : (append ? [] : []);
+      let merged: Product[] = [];
       if (append && existingRaw) {
-        merged = (JSON.parse(existingRaw)?.items || []) as Product[];
+        const rawItems = (JSON.parse(existingRaw)?.items || []) as Product[];
+        // Deduplicate existing items
+        merged = Array.from(new Map(rawItems.map(p => [p.id, p])).values());
       }
       const finalItems = append ? [...merged, ...mapped] : mapped;
-      await AsyncStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), items: finalItems }));
+      // Deduplicate before caching
+      const uniqueFinalItems = Array.from(new Map(finalItems.map(p => [p.id, p])).values());
+      await AsyncStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), items: uniqueFinalItems }));
     } catch {}
   }, []);
 
@@ -357,17 +381,17 @@ const ProductsScreen = () => {
         const res = await fetch(url, { headers: auth ? { Authorization: `Bearer ${auth}` } : undefined });
         const data = await res.json().catch(() => ({} as any));
         const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-        const chunk: Product[] = items.map((p: any, idx: number) => ({
-          id: String(p.id ?? p.productId ?? `${p}-${idx}`),
-          name: String(p.productName ?? p.name ?? 'Sản phẩm'),
-          price: Number(p.price ?? p.defaultPrice ?? 0),
-          barcode: p.barcode ? String(p.barcode) : undefined,
-          categoryId: typeof p.categoryId === 'number' ? p.categoryId : undefined,
-          categoryName: p.categoryName ? String(p.categoryName) : 'Chưa phân loại',
-          quantity: typeof p.quantity === 'number' ? p.quantity : (typeof p.stock === 'number' ? p.stock : undefined),
-          lastUpdated: p.updateAt ? String(p.updateAt).slice(0, 10) : (p.updatedAt ? String(p.updatedAt).slice(0,10) : undefined),
-          imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
-          units: [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true }],
+        const chunk: Product[] = items.map((prodItem: any, idx: number) => ({
+          id: String(prodItem.id ?? prodItem.productId ?? `${p}-${idx}`),
+          name: String(prodItem.productName ?? prodItem.name ?? 'Sản phẩm'),
+          price: Number(prodItem.price ?? prodItem.defaultPrice ?? 0),
+          barcode: prodItem.barcode ? String(prodItem.barcode) : undefined,
+          categoryId: typeof prodItem.categoryId === 'number' ? prodItem.categoryId : undefined,
+          categoryName: prodItem.categoryName ? String(prodItem.categoryName) : 'Chưa phân loại',
+          quantity: typeof prodItem.quantity === 'number' ? prodItem.quantity : (typeof prodItem.stock === 'number' ? prodItem.stock : undefined),
+          lastUpdated: prodItem.updateAt ? String(prodItem.updateAt).slice(0, 10) : (prodItem.updatedAt ? String(prodItem.updatedAt).slice(0,10) : undefined),
+          imageUrl: prodItem.imageUrl ? String(prodItem.imageUrl) : (prodItem.productImageURL ? String(prodItem.productImageURL) : undefined),
+          units: [{ unitName: 'Cái', price: Number(prodItem.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true }],
           selectedUnit: 'Cái',
         }));
         all = [...all, ...chunk];
@@ -376,8 +400,12 @@ const ProductsScreen = () => {
         if (!more) break;
         p += 1;
       }
+      // Deduplicate all products by id
+      const uniqueAll = Array.from(
+        new Map(all.map(p => [p.id, p])).values()
+      );
       const cacheKey = `products:${shopId}:v2`;
-      await AsyncStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), items: all }));
+      await AsyncStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), items: uniqueAll }));
     } catch {}
   }, []);
 
@@ -433,7 +461,7 @@ const ProductsScreen = () => {
   }, [navigation]);
 
   const handleScanBarcode = useCallback(() => {
-    navigation.navigate('Scanner');
+    navigation.navigate('Scanner', { returnScreen: 'Products' });
   }, [navigation]);
 
   const handleEditProduct = useCallback((product: Product) => {
@@ -484,8 +512,8 @@ const ProductsScreen = () => {
     </TouchableOpacity>
   ), [selectedCategory]);
 
-  const keyExtractor = useCallback((item: Product | string) => 
-    typeof item === 'string' ? item : item.id, []);
+  const keyExtractor = useCallback((item: Product | string, index: number) => 
+    typeof item === 'string' ? `category_${index}_${item}` : `product_${item.id}`, []);
 
   const getItemLayout = useCallback((data: any, index: number) => ({
     length: 120, // Height of productItem

@@ -122,8 +122,12 @@ const ScannerScreen = () => {
       // Navigate back to AddProduct screen with barcode
       console.log('📱 Returning to AddProduct with barcode:', code);
       navigation.navigate('AddProduct', { barcode: code });
+    } else if (returnScreen === 'Products') {
+      // Go back to Products screen - just navigate back
+      console.log('📱 Returning to Products screen');
+      navigation.goBack();
     } else {
-      // Default: Go back to OrderScreen với mã đã quét
+      // Default: Go back to OrderScreen với mã đã quét (includes Order and undefined cases)
       console.log('📱 Automatically adding product to order:', code);
       
       // Sử dụng navigate với merge: true để preserve existing params
