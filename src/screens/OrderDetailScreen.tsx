@@ -8,7 +8,15 @@ import API_URL from '../config/api';
 import { getAuthToken, getShopId } from '../services/AuthStore';
 import { RootStackParamList } from '../types/navigation';
 
-type DetailLine = { name: string; qty: number; price: number; unit?: string };
+type DetailLine = { 
+  name: string; 
+  qty: number; 
+  price: number; 
+  unit?: string;
+  basePrice?: number;
+  discountAmount?: number;
+  finalPrice?: number;
+};
 type HeaderInfo = { code: string; buyer: string; time: string; total: number; methodText: string; voucherId?: number | null; discount?: number; note?: string };
 
 const OrderDetailScreen = () => {
@@ -62,7 +70,7 @@ const OrderDetailScreen = () => {
       const code = idNum > 0 ? `#${idNum}` : '#';
       let buyer = String(o?.customerName ?? 'Khách lẻ');
       const time = formatVnDateTime(o?.createdAt ?? o?.datetime);
-      const total = Number(o?.totalPrice ?? o?.totalAmount ?? 0);
+      const total = Number(o?.finalPrice ?? o?.totalPrice ?? o?.totalAmount ?? 0);
       const m = methodFromCode(o?.paymentMethod ?? o?.paymentMethodCode);
       const voucherId = o?.voucherId != null ? Number(o.voucherId) : null;
       const discount = Number(o?.discount ?? 0) || undefined;
@@ -94,7 +102,7 @@ const OrderDetailScreen = () => {
       const shopId = (await getShopId()) ?? 0;
       if (!token || !orderId) return;
       // 1) Load order details
-      const url = `${API_URL}/api/order-details?OrderId=${orderId}&page=1&pageSize=10`;
+      const url = `${API_URL}/api/order-details?OrderId=${orderId}&page=1&pageSize=200`;
       const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
       const json = await res.json().catch(() => null);
       const items: any[] = Array.isArray(json?.items)
@@ -129,11 +137,17 @@ const OrderDetailScreen = () => {
         const unitPriceFromUnit: number = productUnitIdToPrice.get(Number(d?.productUnitId ?? 0)) ?? 0;
         const totalPrice: number = Number(d?.totalPrice ?? 0);
         const price: number = unitPriceFromUnit > 0 ? unitPriceFromUnit : (qty > 0 ? Math.round(totalPrice / qty) : 0);
+        const basePrice = Number(d?.basePrice ?? 0);
+        const discountAmount = Number(d?.discountAmount ?? 0);
+        const finalPrice = Number(d?.finalPrice ?? 0);
         return {
           name: productIdToName.get(Number(d?.productId ?? 0)) || '',
           qty,
           price,
           unit: productUnitIdToUnit.get(Number(d?.productUnitId ?? 0)) || '',
+          basePrice,
+          discountAmount,
+          finalPrice,
         };
       });
       setLines(details);
@@ -184,7 +198,7 @@ const OrderDetailScreen = () => {
           <ActivityIndicator size="small" color="#009DA5" />
         </View>
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16 }}>
+        <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
           <View style={styles.detailRow}>
             <Icon name="account" size={18} color="#666" />
             <Text style={styles.detailText}>Khách: {header.buyer}</Text>
@@ -218,6 +232,15 @@ const OrderDetailScreen = () => {
 
           <View style={styles.sectionDivider} />
 
+          {/* Header Row */}
+          {!loadingDetails && lines.length > 0 && (
+            <View style={styles.headerRow}>
+              <Text style={styles.headerTextProduct}>Sản phẩm</Text>
+              <Text style={styles.headerTextSL}>SL</Text>
+              <Text style={styles.headerTextPrice}>Thành tiền</Text>
+            </View>
+          )}
+
           {loadingDetails ? (
             <View style={{ paddingVertical: 20, alignItems: 'center' }}>
               <ActivityIndicator size="small" color="#009DA5" />
@@ -225,11 +248,22 @@ const OrderDetailScreen = () => {
           ) : (
             lines.map((p, idx) => (
               <View key={idx} style={styles.productRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.productName}>{p.name}</Text>
-                  <Text style={styles.productMeta}>{p.qty} x {p.price.toLocaleString('vi-VN')}₫ {p.unit ? `• ${p.unit}` : ''}</Text>
+                <View style={{ flex: 2 }}>
+                  <Text style={styles.productName}>{p.name || ''}</Text>
+                  <Text style={styles.productMeta}>{p.price.toLocaleString('vi-VN')}₫/{p.unit || 'cái'}</Text>
+                  {p.discountAmount && p.discountAmount > 0 && (
+                    <Text style={styles.priceDetail}>
+                      Giảm: {p.discountAmount.toLocaleString('vi-VN')}₫
+                    </Text>
+                  )}
                 </View>
-                <Text style={styles.productAmount}>{(p.qty * p.price).toLocaleString('vi-VN')}₫</Text>
+                <Text style={styles.quantityText}>{p.qty || 0}</Text>
+                <Text style={styles.productAmount}>
+                  {p.finalPrice && p.finalPrice > 0 
+                    ? `${p.finalPrice.toLocaleString('vi-VN')}₫`
+                    : `${(p.qty * p.price).toLocaleString('vi-VN')}₫`
+                  }
+                </Text>
               </View>
             ))
           )}
@@ -253,10 +287,16 @@ const styles = StyleSheet.create({
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 4 },
   detailText: { fontSize: 14, color: '#333' },
   sectionDivider: { height: 1, backgroundColor: '#EEE', marginVertical: 12 },
-  productRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  headerRow: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EEE' },
+  headerTextProduct: { flex: 2, fontSize: 14, fontWeight: '600', color: '#666' },
+  headerTextSL: { flex: 0.5, fontSize: 14, fontWeight: '600', color: '#666', textAlign: 'center' },
+  headerTextPrice: { flex: 1, fontSize: 14, fontWeight: '600', color: '#666', textAlign: 'right' },
+  productRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
   productName: { fontSize: 14, color: '#000', fontWeight: '500' },
   productMeta: { fontSize: 12, color: '#666' },
-  productAmount: { fontSize: 14, color: '#000' },
+  priceDetail: { fontSize: 11, color: '#009DA5', marginTop: 2 },
+  quantityText: { flex: 0.5, fontSize: 14, color: '#000', textAlign: 'center', marginTop: 2 },
+  productAmount: { flex: 1, fontSize: 14, color: '#000', textAlign: 'right' },
   totalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
   totalLabel: { fontSize: 14, color: '#000' },
   totalValue: { fontSize: 16, fontWeight: 'bold', color: '#000' },

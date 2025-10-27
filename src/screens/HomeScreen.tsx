@@ -13,7 +13,7 @@ const HomeScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [statisticsData, setStatisticsData] = useState<any>(null);
   const [statisticsLoading, setStatisticsLoading] = useState(false);
-  const [selectedDataPoint, setSelectedDataPoint] = useState<{date: string, revenue: number} | null>(null);
+  const [selectedDataPoint, setSelectedDataPoint] = useState<{date: string, revenue: number, profit?: number, orderCount?: number, productCount?: number} | null>(null);
 
   const loadShiftStats = useCallback(async () => {
     try {
@@ -183,6 +183,9 @@ const HomeScreen = () => {
     if (index >= 0 && index < dailyRevenues.length) {
       const selectedItem = dailyRevenues[index];
       const revenue = Number(selectedItem?.revenue || 0);
+      const profit = Number(selectedItem?.profit || 0);
+      const orderCount = Number(selectedItem?.orderCount || 0);
+      const productCount = Number(selectedItem?.productCount || 0);
       const date = selectedItem?.date;
       
       if (date) {
@@ -191,12 +194,18 @@ const HomeScreen = () => {
           const formattedDate = `${dateObj.getDate()}/${dateObj.getMonth() + 1}/${dateObj.getFullYear()}`;
           setSelectedDataPoint({
             date: formattedDate,
-            revenue: revenue
+            revenue,
+            profit,
+            orderCount,
+            productCount
           });
         } catch {
           setSelectedDataPoint({
             date: date,
-            revenue: revenue
+            revenue,
+            profit,
+            orderCount,
+            productCount
           });
         }
       }
@@ -344,8 +353,18 @@ const HomeScreen = () => {
                         <View style={styles.selectedDataPointInfo}>
                           <Text style={styles.selectedDataPointDate}>{selectedDataPoint.date}</Text>
                           <Text style={styles.selectedDataPointRevenue}>
-                            {selectedDataPoint.revenue.toLocaleString('vi-VN')} VNĐ
+                            Doanh thu: {selectedDataPoint.revenue.toLocaleString('vi-VN')} VNĐ
                           </Text>
+                          {selectedDataPoint.profit !== undefined && selectedDataPoint.profit > 0 && (
+                            <Text style={styles.selectedDataPointProfit}>
+                              Lợi nhuận: {selectedDataPoint.profit.toLocaleString('vi-VN')} VNĐ
+                            </Text>
+                          )}
+                          {selectedDataPoint.orderCount !== undefined && selectedDataPoint.orderCount > 0 && (
+                            <Text style={styles.selectedDataPointStats}>
+                              Đơn hàng: {selectedDataPoint.orderCount} • Sản phẩm: {selectedDataPoint.productCount}
+                            </Text>
+                          )}
                         </View>
                         <TouchableOpacity 
                           onPress={() => setSelectedDataPoint(null)}
@@ -403,7 +422,12 @@ const HomeScreen = () => {
                         <View style={styles.productInfo}>
                           <Text style={styles.productName} numberOfLines={1}>{product.productName}</Text>
                           <Text style={styles.productCategory}>{product.categoryName}</Text>
-                          <Text style={styles.productStats}>Đã bán: {product.totalQuantitySold} • {product.totalRevenue.toLocaleString('vi-VN')} VNĐ</Text>
+                          <Text style={styles.productStats}>
+                            Đã bán: {product.totalQuantitySold} • Giá TB: {product.averagePrice?.toLocaleString('vi-VN')}₫
+                          </Text>
+                          <Text style={styles.productStats}>
+                            Doanh thu: {product.totalRevenue.toLocaleString('vi-VN')}₫ • Lợi nhuận: {product.totalProfit?.toLocaleString('vi-VN')}₫
+                          </Text>
                         </View>
                       </View>
                     ))}
@@ -448,7 +472,10 @@ const HomeScreen = () => {
                           <View style={styles.categoryInfo}>
                             <Text style={styles.categoryName}>{category.categoryName}</Text>
                             <Text style={styles.categoryStats}>
-                              {category.totalQuantitySold} sản phẩm • {category.totalRevenue.toLocaleString('vi-VN')} VNĐ ({category.percentageOfTotal.toFixed(1)}%)
+                              {category.productCount} loại • Đã bán: {category.totalQuantitySold} • {category.totalRevenue.toLocaleString('vi-VN')} VNĐ ({category.percentageOfTotal.toFixed(1)}%)
+                            </Text>
+                            <Text style={styles.categoryStats}>
+                              Lợi nhuận: {category.totalProfit?.toLocaleString('vi-VN')} VNĐ
                             </Text>
                           </View>
                         </View>
@@ -711,9 +738,22 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   selectedDataPointRevenue: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 14,
+    fontWeight: '600',
     color: '#34A853',
+    marginBottom: 2,
+  },
+  selectedDataPointProfit: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4285F4',
+    marginBottom: 2,
+  },
+  selectedDataPointStats: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#666',
+    marginTop: 2,
   },
   closeButton: {
     padding: 4,

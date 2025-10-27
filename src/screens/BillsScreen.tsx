@@ -125,7 +125,7 @@ const BillsScreen = () => {
       const mapped: BillItem[] = items.map((o: any) => {
         const idNum = Number(o?.orderId ?? o?.id ?? 0);
         const statusNum = Number(o?.status ?? 0);
-        const total = Number(o?.totalPrice ?? o?.totalAmount ?? 0);
+        const total = Number(o?.finalPrice ?? o?.totalPrice ?? o?.totalAmount ?? 0);
         const buyer = String(o?.customerName ?? 'Khách lẻ');
         const code = idNum > 0 ? `#${idNum}` : String(o?.code ?? '#');
         const time = formatVnDateTime(o?.createdAt ?? o?.datetime);
@@ -217,7 +217,7 @@ const BillsScreen = () => {
       const mapped: BillItem[] = items.map((o: any) => {
         const idNum = Number(o?.orderId ?? o?.id ?? 0);
         const statusNum = Number(o?.status ?? 0);
-        const total = Number(o?.totalPrice ?? o?.totalAmount ?? 0);
+        const total = Number(o?.finalPrice ?? o?.totalPrice ?? o?.totalAmount ?? 0);
         const buyer = String(o?.customerName ?? 'Khách lẻ');
         const code = idNum > 0 ? `#${idNum}` : String(o?.code ?? '#');
         const time = formatVnDateTime(o?.createdAt ?? o?.datetime);
