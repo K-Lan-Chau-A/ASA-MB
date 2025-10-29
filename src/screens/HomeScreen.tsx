@@ -47,7 +47,7 @@ const HomeScreen = () => {
         : [];
       const successful = items.filter((o: any) => Number(o?.status ?? 0) === 1);
       const invoices = successful.length;
-      const revenue = successful.reduce((sum: number, o: any) => sum + Number(o?.totalPrice ?? o?.totalAmount ?? 0), 0);
+      const revenue = successful.reduce((sum: number, o: any) => sum + Number(o?.finalPrice ?? o?.totalPrice ?? 0), 0);
       setTodayInfo({ dateLabel: 'Hôm nay', invoices, revenue });
     } catch {
       setTodayInfo({ dateLabel: 'Hôm nay', invoices: 0, revenue: 0 });

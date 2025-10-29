@@ -164,6 +164,16 @@ const ManageAccount = () => {
       if (createForm.phoneNumber.trim()) fd.append('PhoneNumber', createForm.phoneNumber.trim());
       if (createForm.citizenIdNumber.trim()) fd.append('CitizenIdNumber', createForm.citizenIdNumber.trim());
       fd.append('ShopId', String(shopId));
+      // Append FeatureIds as repeated multipart fields per Swagger
+      try {
+        const featureIds = availableFeatures
+          .filter(f => Boolean(createFeaturesSelected[f.featureId]))
+          .map(f => f.featureId);
+        for (const id of featureIds) {
+          fd.append('FeatureIds', String(id));
+        }
+        try { console.log('[CreateStaff] FeatureIds appended:', featureIds); } catch {}
+      } catch {}
       // AvatarFile có thể null: chỉ đính kèm nếu người dùng đã chọn ảnh từ thư viện
       if (createForm.avatarUri && (createForm.avatarUri.startsWith('file') || createForm.avatarUri.startsWith('content'))) {
         const uri = createForm.avatarUri;
@@ -183,33 +193,7 @@ const ManageAccount = () => {
         const json = await res.json().catch(() => null);
         const msg = (json && (json.message || json?.data?.message)) || 'Tạo tài khoản thành công';
         try { console.log('[CreateStaff] success response:', json); } catch {}
-        // Lấy userId mới tạo
-        const createdUserId = Number(
-          (json?.data?.userId ?? json?.userId ?? json?.id ?? json?.data?.user?.userId ?? 0)
-        ) || 0;
-        // Cấp quyền mặc định dựa trên availableFeatures
-        try {
-          if (createdUserId > 0 && availableFeatures.length > 0) {
-            const featuresToAssign = availableFeatures
-              .filter(f => Boolean(createFeaturesSelected[f.featureId]))
-              .map(f => ({ featureId: f.featureId, featureName: f.featureName, isEnabled: true, isEnable: true }));
-            
-            if (featuresToAssign.length > 0) {
-              const payload = {
-                userId: createdUserId,
-                features: featuresToAssign,
-              } as any;
-              try { console.log('[UserFeature][assign] payload:', payload); } catch {}
-              const featRes = await fetch(`${API_URL}/api/userfeature`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify(payload),
-              });
-              const featJson = await featRes.json().catch(() => null);
-              try { console.log('[UserFeature][assign] status:', featRes.status, 'body:', featJson); } catch {}
-            }
-          }
-        } catch {}
+        // Quyền đã gửi kèm trong form-data bằng các field FeatureIds theo Swagger
         closeCreate();
         setCreateForm({ username: '', password: '', fullName: '', phoneNumber: '', citizenIdNumber: '', avatarUri: '' });
         await loadStaff();
