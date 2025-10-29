@@ -252,16 +252,17 @@ const fetchAllProducts = async (shopId: number): Promise<AvailableProduct[]> => 
   
   return items.map((p: any, idx: number) => {
     const availableQuantity = Number(p.quantity ?? p.availableQuantity ?? 0);
-    const units = Array.isArray(p.units) && p.units.length > 0
-      ? (p.units as Array<{ name?: string; unitName?: string; price?: number; conversionFactor?: number; quantityInBaseUnit?: number; isBaseUnit?: boolean; }>).map((u) => ({
-          unitName: String(u.name ?? u.unitName ?? 'Cái'),
-          price: Number(u.price ?? p.price ?? 0),
-          quantityInBaseUnit: Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1),
-          isBaseUnit: Boolean(u.isBaseUnit ?? false),
-          availableQuantity: availableQuantity ? Math.floor(availableQuantity / Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1)) : undefined,
-        }))
-      : [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true, availableQuantity }];
-    const selectedUnit = (units.find(u => u.isBaseUnit) || units[0]).unitName;
+    // Build units: include base from p.unitName + extra units from p.units
+    const extraUnits = (Array.isArray(p.units) ? p.units : []).map((u: any) => ({
+      unitName: String(u.unitName ?? u.name ?? 'Cái'),
+      price: Number((u.promotionPrice ?? u.price ?? p.promotionPrice ?? p.price ?? 0)),
+      quantityInBaseUnit: Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1),
+      isBaseUnit: Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1) === 1,
+      availableQuantity: availableQuantity ? Math.floor(availableQuantity / Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1)) : undefined,
+    }));
+    const baseUnit = { unitName: String(p.unitName ?? 'Cái'), price: Number((p.promotionPrice ?? p.price ?? 0)), quantityInBaseUnit: 1, isBaseUnit: true, availableQuantity };
+    const units = [baseUnit, ...extraUnits.filter(u => u.quantityInBaseUnit !== 1)];
+    const selectedUnit = baseUnit.unitName;
     // Create unique ID: prefer actual ID, then timestamp + index as fallback
     const uniqueId = p.id ?? p.productId ?? `${Date.now()}-${idx}`;
     return {
@@ -410,7 +411,7 @@ const OrderScreen = () => {
   useEffect(() => {
     if (route.params?.scannedProduct) {
       const { barcode, type } = route.params.scannedProduct;
-      // Prefer fetching from API by barcode for selling flow
+          // Prefer fetching from API by barcode for selling flow
       const run = async () => {
         try {
           const shopId = (await getShopId()) ?? 0;
@@ -426,38 +427,33 @@ const OrderScreen = () => {
             const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
             const p: any = items[0];
             if (p) {
-              candidate = {
+                candidate = {
                 id: String(p.id ?? p.productId ?? ''),
                 name: String(p.productName ?? p.name ?? 'Sản phẩm'),
                 price: Number(p.price ?? 0),
                 barcode: p.barcode ? String(p.barcode) : undefined,
                 imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
-                units: [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true }],
-                selectedUnit: 'Cái',
+                  // base unit + units from product response (base first)
+                  units: ([
+                    { unitName: String(p.unitName ?? 'Cái'), price: Number((p.promotionPrice ?? p.price ?? 0)), quantityInBaseUnit: 1, isBaseUnit: true },
+                    ...((Array.isArray(p.units) ? p.units : []).map((u: any) => ({
+                      unitName: String(u.unitName ?? u.name ?? 'Cái'),
+                      price: Number((u.promotionPrice ?? u.price ?? p.promotionPrice ?? p.price ?? 0)),
+                      quantityInBaseUnit: Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1),
+                      isBaseUnit: Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1) === 1,
+                    })).filter((u: any) => u.quantityInBaseUnit !== 1))
+                  ]),
+                  selectedUnit: String(p.unitName ?? 'Cái'),
                 availableQuantity: Number(p.quantity ?? p.availableQuantity ?? 0),
               } as AvailableProduct;
             }
           }
           if (candidate) {
-            // Enrich units from product-units API
-            try {
-              const uRes = await fetch(`${API_URL}/api/product-units?ShopId=${shopId}&ProductId=${candidate.id}&page=1&pageSize=50`, {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-              });
-              const uData = await uRes.json().catch(() => ({}));
-              const arr: any[] = Array.isArray(uData?.items) ? uData.items : [];
-              if (arr.length > 0) {
-                const units = arr.map((u: any) => ({
-                  unitName: String(u.unitName ?? u.name ?? 'Cái'),
-                  price: Number(u.price ?? candidate.price ?? 0),
-                  quantityInBaseUnit: Number(u.conversionFactor ?? 1),
-                  isBaseUnit: Number(u.conversionFactor ?? 1) === 1,
-                  availableQuantity: candidate.availableQuantity ? Math.floor(candidate.availableQuantity / Number(u.conversionFactor ?? 1)) : undefined,
-                })).sort((a: any, b: any) => (a.quantityInBaseUnit || 1) - (b.quantityInBaseUnit || 1));
-                const base = units.find((u: any) => u.isBaseUnit) || units[0];
-                candidate = { ...candidate, units, price: base.price, selectedUnit: base.unitName };
-              }
-            } catch {}
+                // Use units from candidate directly (already mapped above or from local list)
+                const mappedUnits: any[] = Array.isArray((candidate as any).units) ? (candidate as any).units : [];
+                const sorted = mappedUnits.slice().sort((a: any, b: any) => (a.quantityInBaseUnit || 1) - (b.quantityInBaseUnit || 1));
+                const base = sorted.find((u: any) => u.isBaseUnit || Number(u.quantityInBaseUnit ?? 1) === 1) || sorted[0] || { unitName: 'Cái', price: candidate.price, quantityInBaseUnit: 1, isBaseUnit: true };
+                candidate = { ...candidate, units: sorted.length ? sorted : [base], price: base.price, selectedUnit: base.unitName };
 
             const productToAdd = candidate as Product;
             addProduct(productToAdd);
@@ -687,44 +683,16 @@ const OrderScreen = () => {
     const currentQuantity = productQuantities.get(item.id) || 0;
     
     const handleAddProduct = async () => {
-      try {
-        const shopId = (await getShopId()) ?? 0;
-        const token = await getAuthToken();
-        const res = await fetch(`${API_URL}/api/product-units?ShopId=${shopId}&ProductId=${item.id}&page=1&pageSize=50`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
-        const data = await res.json();
-        const unitsApi: Array<{ unitName?: string; name?: string; price?: number; conversionFactor?: number; productUnitId?: number; id?: number; unitId?: number }>
-          = Array.isArray(data?.items) ? data.items : [];
-        const units = unitsApi.length > 0
-          ? unitsApi.map(u => ({
-              unitName: String(u.unitName ?? u.name ?? 'Cái'),
-              price: Number(u.price ?? item.price ?? 0),
-              quantityInBaseUnit: Number(u.conversionFactor ?? 1),
-              isBaseUnit: Number(u.conversionFactor ?? 1) === 1,
-              productUnitId: Number(u.productUnitId ?? u.id ?? 0) || undefined,
-              unitId: Number(u.unitId ?? 0) || undefined,
-              availableQuantity: item.availableQuantity ? Math.floor(item.availableQuantity / Number(u.conversionFactor ?? 1)) : undefined,
-            }))
-          : item.units;
-        try {
-          console.log('[Units] productId', item.id, 'units', units.map((u: any) => ({ unitName: u.unitName, productUnitId: u.productUnitId, conversionFactor: u.quantityInBaseUnit, price: u.price })));
-        } catch {}
-        const base = units.find((u: any) => u.isBaseUnit) || units[0];
-        const productToAdd = {
-          ...item,
-          units,
-          price: base.price,
-          selectedUnit: base.unitName,
-          // carry selected unit's productUnitId for downstream use
-          // (ConfirmOrderScreen will rely on this to avoid re-fetching)
-        };
-        addProduct(productToAdd);
-      } catch (e) {
-        // fallback to existing units
-        const base = item.units[0];
-        addProduct({ ...item, price: base.price, selectedUnit: base.unitName });
-      }
+      // Use units provided from products response directly (no extra API call)
+      const units = item.units;
+      const base = (units as any[])?.find((u: any) => u.isBaseUnit || Number(u.quantityInBaseUnit ?? 1) === 1) || units[0];
+      const productToAdd = {
+        ...item,
+        units,
+        price: base.price,
+        selectedUnit: base.unitName,
+      };
+      addProduct(productToAdd);
     };
     
     return (

@@ -477,7 +477,7 @@ const SettingScreen = () => {
             </View>
             
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Ngày tạo:</Text>
+              <Text style={styles.infoLabel}>Ngày khởi tạo:</Text>
               <Text style={styles.infoValue}>
                 {shopData?.createdAt ? new Date(shopData.createdAt).toLocaleDateString('vi-VN') : 'N/A'}
               </Text>

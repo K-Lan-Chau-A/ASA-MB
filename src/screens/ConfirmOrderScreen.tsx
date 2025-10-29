@@ -11,6 +11,7 @@ import {
   Modal,
   Dimensions,
   Image,
+  Switch,
 } from 'react-native';
 import { ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -75,6 +76,7 @@ const ConfirmOrderScreen = () => {
   const qrPollTimer = useRef<NodeJS.Timeout | null>(null);
   const [isUsingStaticQR, setIsUsingStaticQR] = useState(false);
   const [showManualConfirmButton, setShowManualConfirmButton] = useState(false);
+  const [isSendInvoice, setIsSendInvoice] = useState(false);
 
   type Voucher = { voucherId: number; code: string; type: number; value: number; expired: string };
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
@@ -277,6 +279,13 @@ const ConfirmOrderScreen = () => {
         note: (promoCode || discountReason) ? [promoCode ? `Mã: ${promoCode}` : '', discountReason ? `Lý do: ${discountReason}` : ''].filter(Boolean).join(' | ') : null,
         orderDetails,
         ...(selectedCustomerId ? { customerId: Number(selectedCustomerId) } : {}),
+        ...(isSendInvoice ? { isSendInvoice: true } : {}),
+        // Totals naming alignment
+        totalPrice: Number(originalTotal || 0),
+        totalDiscount: Number(appliedDiscount || 0),
+        finalTotal: Number(finalTotal || 0),
+        // Backward-compat for backends using finalPrice
+        finalPrice: Number(finalTotal || 0),
       };
 
       try {
@@ -300,7 +309,8 @@ const ConfirmOrderScreen = () => {
           paymentMethod: payload.paymentMethod,
           status: payload.status,
           totalPrice: payload.totalPrice,
-          amountPaid: payload.amountPaid,
+          totalDiscount: payload.totalDiscount,
+          finalTotal: payload.finalTotal,
           discount: payload.discount,
           voucherId: payload.voucherId ?? null,
           customerId: payload.customerId ?? null,
@@ -606,10 +616,10 @@ const ConfirmOrderScreen = () => {
       const dt = new Date(createdAtStr);
       const date = dt.toLocaleDateString('vi-VN', { day: 'numeric', month: 'long', year: 'numeric' });
       const time = dt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
-      // Prefer local finalTotal when có giảm giá, vì backend có thể chưa phản ánh ngay
-      const resolvedTotal = appliedDiscount > 0
-        ? finalTotal
-        : Number(createdOrder.totalPrice ?? finalTotal);
+      // Prefer backend fields finalTotal/finalPrice when present; fallback to computed
+      const resolvedTotal = Number(
+        (createdOrder.finalTotal ?? createdOrder.finalPrice ?? finalTotal)
+      );
       return {
         invoiceNumber: `#${createdOrder.orderId}`,
         date,
@@ -870,6 +880,22 @@ const ConfirmOrderScreen = () => {
           <View style={styles.finalTotalRow}>
             <Text style={styles.finalTotalLabel}>TỔNG THANH TOÁN:</Text>
             <Text style={styles.finalTotalAmount}>{finalTotal.toLocaleString('vi-VN')}đ</Text>
+          </View>
+        </View>
+
+        {/* Send Invoice Toggle */}
+        <View style={styles.section}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={{ fontSize: 16, fontWeight: '600', color: '#000' }}>Gửi hóa đơn qua email</Text>
+              {!!(customerInfo?.email) && (
+                <Text style={{ fontSize: 12, color: '#666', marginTop: 4 }}>Sẽ gửi đến: {customerInfo.email}</Text>
+              )}
+            </View>
+            <Switch
+              value={isSendInvoice}
+              onValueChange={setIsSendInvoice}
+            />
           </View>
         </View>
 
