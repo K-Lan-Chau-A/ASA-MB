@@ -129,7 +129,7 @@ const ChatbotScreen = () => {
       const token = await getAuthToken();
       const shopId = (await getShopId()) ?? 0;
       if (!token || !(shopId > 0)) return;
-      const url = `${API_URL}/api/chat-messages?ShopId=${shopId}&page=${targetPage}&pageSize=${pageSize}`;
+      const url = `${API_URL}/api/chat-messages?ShopId=${shopId}&UserId=${userId}&page=${targetPage}&pageSize=${pageSize}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       const json = await res.json().catch(() => null);
       const items = extractItems(json);

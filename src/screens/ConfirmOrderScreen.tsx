@@ -480,15 +480,11 @@ const ConfirmOrderScreen = () => {
   // Helper function to check bank info completeness
   const checkBankInfoCompleteness = async () => {
     const sepayApiKey = await getSepayApiKey();
-    const shopToken = await getShopToken();
     
     if (!sepayApiKey) {
       return { isValid: false, message: 'Thiếu Sepay API Key' };
     }
     
-    if (!shopToken) {
-      return { isValid: false, message: 'Thiếu Shop Token' };
-    }
     
     return { isValid: true, message: 'OK' };
   };
