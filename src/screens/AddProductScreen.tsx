@@ -117,6 +117,12 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
   const [invoiceImage, setInvoiceImage] = useState('');
   const [isProductImageUploading, setIsProductImageUploading] = useState(false);
   const [isInvoiceImageUploading, setIsInvoiceImageUploading] = useState(false);
+  const [lowStockThreshold, setLowStockThreshold] = useState<string>(
+    (() => {
+      const v: any = (route.params as any)?.product?.isLow;
+      return typeof v === 'number' && !isNaN(v) ? String(v) : '0';
+    })()
+  );
 
   // Khi nhận barcode từ màn quét, chỉ cập nhật trường barcode, giữ nguyên các trường khác
   useEffect(() => {
@@ -673,6 +679,8 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
       form.append('Price', String(sellPrice));
       form.append('Discount', String(parsedDiscount));
       form.append('Status', String(1));
+      // Low stock alert threshold
+      form.append('IsLow', String(parseInt(lowStockThreshold || '0', 10) || 0));
       // Units as JSON array (server parses stringified JSON) - updated field name per API change
       form.append('UnitsJson', JSON.stringify(unitsPayload));
       if (!isEditing) {
@@ -726,6 +734,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
           hasImage: Boolean(product.image),
           inventoryTotalPrice: totalImportPrice,
           hasInvoiceImage: Boolean(invoiceImage),
+          isLow: parseInt(lowStockThreshold || '0', 10) || 0,
         } as any);
       } catch {}
       const res = await fetch(url, {
@@ -769,7 +778,7 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
     } finally {
       setIsSaving(false);
     }
-  }, [product, baseUnit, additionalUnits, navigation, isEditing, editingId, categories, shopId, invoiceImage]);
+  }, [product, baseUnit, additionalUnits, navigation, isEditing, editingId, categories, shopId, invoiceImage, lowStockThreshold]);
 
   const handleCancel = useCallback(() => {
     // Simply go back without adding any product
@@ -1125,6 +1134,21 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
               </View>
             </View>
           )}
+
+          {/* Low stock threshold */}
+          <View style={styles.fieldContainer}>
+            <Text style={styles.label}>Ngưỡng cảnh báo tồn kho</Text>
+            <TextInput
+              style={styles.input}
+              value={lowStockThreshold}
+              onChangeText={(text) => setLowStockThreshold(text.replace(/[^\d]/g, ''))}
+              placeholder="0"
+              keyboardType="numeric"
+            />
+            <Text style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
+              Khi số lượng tồn thấp hơn ngưỡng này, hệ thống sẽ nhắc nhập hàng.
+            </Text>
+          </View>
 
           {/* Invoice Image */}
           {!isEditing && (
