@@ -71,6 +71,7 @@ const ConfirmOrderScreen = () => {
   const [showNFCModal, setShowNFCModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdOrder, setCreatedOrder] = useState<any | null>(null);
+  const [createdOrderStatus, setCreatedOrderStatus] = useState<number | null>(null); // 0: pending, 1: paid
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [qrData, setQrData] = useState<{ url: string; amount: number; orderId: number } | null>(null);
   const qrPollTimer = useRef<NodeJS.Timeout | null>(null);
@@ -184,7 +185,21 @@ const ConfirmOrderScreen = () => {
       return;
     }
     setShowCashModal(false);
-    submitOrder();
+    // If we already created a pending order (from chuyển khoản), update that order to paid instead of creating new
+    if (createdOrder && typeof createdOrder.orderId !== 'undefined' && createdOrderStatus !== 1) {
+      (async () => {
+        try {
+          await updateOrderStatus(Number(createdOrder.orderId), 1, mapPaymentMethodToCode('cash'));
+          setCreatedOrderStatus(1);
+          setShowSuccessModal(true);
+        } catch (e: any) {
+          Alert.alert('Lỗi', e?.message ?? 'Không thể cập nhật trạng thái đơn hàng sang đã thanh toán');
+        }
+      })();
+    } else {
+      // No existing order -> create new order (paid)
+      submitOrder();
+    }
   }, [cashAmount, finalTotal]);
 
   const mapPaymentMethodToCode = (method: PaymentMethod) => {
@@ -197,6 +212,60 @@ const ConfirmOrderScreen = () => {
         return 3;
       default:
         return 1;
+    }
+  };
+
+  // Update order status helper with fallback endpoints
+  const updateOrderStatus = async (orderId: number, status: number, paymentMethodCode?: number) => {
+    const token = await getAuthToken();
+    const shopId = (await getShopId()) ?? 0;
+    const shiftId = (await getShiftId()) ?? 0;
+    // Rebuild orderDetails from current products just like submitOrder
+    const orderDetails = await Promise.all(products.map(async (p) => {
+      const productUnitId = await resolveProductUnitId(shopId, p.id, p.selectedUnit, token);
+      return {
+        quantity: Number(p.quantity ?? 0),
+        productUnitId: Number(productUnitId ?? 0),
+        productId: Number(p.id),
+      };
+    }));
+    const customDiscountPercent = (() => {
+      const pct = parseFloat(discountPercentage || '');
+      if (!selectedVoucherId && !isNaN(pct) && pct > 0 && pct <= 100) return Math.round(pct);
+      return undefined;
+    })();
+    const body: any = {
+      paymentMethod: paymentMethodCode ?? mapPaymentMethodToCode(selectedPaymentMethod),
+      status,
+      shiftId,
+      shopId,
+      ...(selectedVoucherId ? { voucherId: selectedVoucherId } : {}),
+      ...(customDiscountPercent ? { discount: customDiscountPercent } : {}),
+      note: (promoCode || discountReason) ? [promoCode ? `Mã: ${promoCode}` : '', discountReason ? `Lý do: ${discountReason}` : ''].filter(Boolean).join(' | ') : null,
+      isSendInvoice: Boolean(isSendInvoice),
+      orderDetails,
+      ...(selectedCustomerId ? { customerId: Number(selectedCustomerId) } : {}),
+      totalPrice: Number(originalTotal || 0),
+      totalDiscount: Number(appliedDiscount || 0),
+      finalTotal: Number((originalTotal - appliedDiscount) || 0),
+    };
+    try {
+      const url = `${API_URL}/api/orders/${orderId}`;
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || 'HTTP error');
+      }
+      return true;
+    } catch (e) {
+      throw new Error((e as any)?.message ?? 'Không thể cập nhật trạng thái đơn hàng');
     }
   };
 
@@ -268,8 +337,8 @@ const ConfirmOrderScreen = () => {
 
       const payload: any = {
         paymentMethod: mapPaymentMethodToCode(selectedPaymentMethod),
-        // Mark order as successful (1) upon creation; payment flow handled client-side
-        status: 1,
+        // Create order in pending state; backend will update to 1 (paid) when confirmed
+        status: 0,
         shiftId: shiftId,
         shopId: shopId,
         // Let backend compute totals from orderDetails; do not send totalPrice/amountPaid
@@ -346,6 +415,11 @@ const ConfirmOrderScreen = () => {
       if (envelope && typeof envelope.orderId !== 'undefined' && Number(envelope.orderId) > 0) {
         try { console.log('[CreateOrder] created orderId', envelope.orderId); } catch {}
         setCreatedOrder(envelope);
+        if (selectedPaymentMethod === 'bank_transfer') {
+          setCreatedOrderStatus(0);
+        } else {
+          setCreatedOrderStatus(1);
+        }
         
         // Show appropriate modal based on payment method
         if (selectedPaymentMethod === 'bank_transfer') {
@@ -462,7 +536,22 @@ const ConfirmOrderScreen = () => {
         return;
       }
       
-      // Bank info is available, proceed with order creation
+      // Bank info is available
+      // Reuse existing created order and QR if available to avoid creating a new order
+      if (createdOrder && typeof createdOrder.orderId !== 'undefined' && Number(createdOrder.orderId) > 0) {
+        const existingOrderId = Number(createdOrder.orderId);
+        // If we already have QR data cached, just reopen the modal
+        if (qrData && qrData.url) {
+          setShowQRModal(true);
+          // restart polling to resume waiting for payment status
+          startPollOrderPaidStatus(existingOrderId);
+          return;
+        }
+        // No cached QR -> fetch QR again for the same order id (do NOT create new order)
+        await fetchQRCode(existingOrderId);
+        return;
+      }
+      // No existing order -> create a new pending order, QR will be fetched in submitOrder flow
       setShowQRModal(true);
       setQrData(null);
       submitOrder();
@@ -666,17 +755,26 @@ const ConfirmOrderScreen = () => {
     };
   }, []);
 
-  const startPollOrderPaidStatus = async (orderId: number) => {
+  const startPollOrderPaidStatus = async (orderId: number, timeoutMs: number = 5 * 60 * 1000) => {
     if (!orderId) return;
     // clear any existing poller
     if (qrPollTimer.current) {
       clearInterval(qrPollTimer.current);
       qrPollTimer.current = null;
     }
+    const startTs = Date.now();
     const token = await getAuthToken();
     const shopId = (await getShopId()) ?? 0;
     const poll = async () => {
       try {
+        // Stop after timeout window
+        if (Date.now() - startTs >= timeoutMs) {
+          if (qrPollTimer.current) {
+            clearInterval(qrPollTimer.current);
+            qrPollTimer.current = null;
+          }
+          return;
+        }
         console.log('[VietQR][poll] checking orderId', orderId, 'shopId', shopId);
         const res = await fetch(`${API_URL}/api/orders?ShopId=${shopId}&page=1&pageSize=100`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -700,6 +798,7 @@ const ConfirmOrderScreen = () => {
             clearInterval(qrPollTimer.current);
             qrPollTimer.current = null;
           }
+          setCreatedOrderStatus(1);
           setShowQRModal(false);
           setShowSuccessModal(true);
         }
