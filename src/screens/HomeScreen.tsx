@@ -3,10 +3,15 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, D
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
+import { useNavigation } from '@react-navigation/native';
+import { NavigationProp } from '@react-navigation/native';
+import { RootStackParamList } from '../types/navigation';
 import API_URL from '../config/api';
 import { getAuthToken, getShopId, getShiftId, refreshOpenShiftId } from '../services/AuthStore';
+import { handle403Error } from '../utils/apiErrorHandler';
 
 const HomeScreen = () => {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [hideMoney, setHideMoney] = useState(true);
   const [loading, setLoading] = useState(false);
   const [todayInfo, setTodayInfo] = useState({ dateLabel: 'Hôm nay', invoices: 0, revenue: 0 });
@@ -35,6 +40,7 @@ const HomeScreen = () => {
       const res = await fetch(`${API_URL}/api/orders?ShopId=${shopId}&ShiftId=${shiftId}&page=1&pageSize=100`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (handle403Error(res, navigation)) return;
       const json = await res.json().catch(() => null);
       const items: any[] = Array.isArray(json?.items)
         ? json.items
@@ -68,6 +74,7 @@ const HomeScreen = () => {
       const res = await fetch(`${API_URL}/api/reports/statistics-overview?shopId=${shopId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (handle403Error(res, navigation)) return;
       const data = await res.json().catch(() => null);
       if (data) {
         setStatisticsData(data);

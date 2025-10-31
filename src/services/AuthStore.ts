@@ -23,6 +23,7 @@ export type AuthData = {
 
 const STORAGE_KEY = 'auth:data:v1';
 const CREDS_KEY = 'auth:creds:v1';
+const CHATBOT_CACHE_PREFIX = 'chatbot_messages_';
 
 export const authStore = {
   async save(data: AuthData): Promise<void> {
@@ -245,6 +246,18 @@ export const clearCredentials = async (): Promise<void> => {
   try { await AsyncStorage.removeItem(CREDS_KEY); } catch {}
 };
 
+// Clear all cached chatbot messages for all shops
+export const clearChatbotCaches = async (): Promise<void> => {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const toRemove = keys.filter((k) => k.startsWith(CHATBOT_CACHE_PREFIX));
+    if (toRemove.length > 0) {
+      await AsyncStorage.multiRemove(toRemove);
+    }
+    try { console.log('[AuthStore][clearChatbotCaches] removed keys:', toRemove.length); } catch {}
+  } catch {}
+};
+
 // Local-only logout: clear auth data and saved credentials
 export const logoutLocal = async (): Promise<void> => {
   try {
@@ -252,6 +265,8 @@ export const logoutLocal = async (): Promise<void> => {
       AsyncStorage.removeItem(STORAGE_KEY),
       AsyncStorage.removeItem(CREDS_KEY),
     ]);
+    // Also clear chatbot caches to avoid showing old messages after account switch
+    await clearChatbotCaches();
     try { console.log('[AuthStore][logoutLocal] cleared auth and credentials'); } catch {}
   } catch {}
 };

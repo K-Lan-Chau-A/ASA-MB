@@ -6,6 +6,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import API_URL from '../config/api';
 import { getAuthToken, getShopId } from '../services/AuthStore';
 import { RootStackParamList } from '../types/navigation';
+import { handle403Error } from '../utils/apiErrorHandler';
 
 interface CategoryItem { categoryId: number; categoryName: string; description?: string }
 
@@ -29,6 +30,7 @@ const ManageCategoryScreen = () => {
       const shopId = (await getShopId()) ?? 0;
       const token = await getAuthToken();
       const res = await fetch(`${API_URL}/api/categories?shopId=${shopId}&page=1&pageSize=100`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      if (handle403Error(res, navigation)) return;
       const data = await res.json().catch(() => ({}));
       const arr: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
       const mapped: CategoryItem[] = arr.map((c: any) => ({ categoryId: Number(c.categoryId ?? 0), categoryName: String(c.categoryName ?? ''), description: c.description ? String(c.description) : undefined }));
@@ -55,6 +57,7 @@ const ManageCategoryScreen = () => {
       const url = editing ? `${API_URL}/api/categories/${editing.categoryId}` : `${API_URL}/api/categories`;
       const method = editing ? 'PUT' : 'POST';
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(payload) });
+      if (handle403Error(res, navigation)) return;
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { Alert.alert('Lỗi', data?.message || (editing ? 'Cập nhật thất bại' : 'Tạo danh mục thất bại')); return; }
       setIsModalOpen(false); setName(''); setDesc(''); setEditing(null); load();

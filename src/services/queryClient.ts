@@ -7,7 +7,8 @@ export const queryClient = new QueryClient({
       gcTime: 30 * 60 * 1000, // 30 minutes cache
       retry: 1,
       refetchOnReconnect: true,
-      refetchOnMount: false,
+      // Always refetch on mount to validate permission (show 403 immediately even with cache)
+      refetchOnMount: 'always',
       refetchOnWindowFocus: true,
     },
     mutations: {

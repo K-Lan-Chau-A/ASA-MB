@@ -1,10 +1,12 @@
 import React, { useCallback, useMemo, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, Modal, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
+import { RootStackParamList } from '../types/navigation';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import API_URL from '../config/api';
+import { handle403Error } from '../utils/apiErrorHandler';
 import { getAuthToken, getShopId } from '../services/AuthStore';
 
 type Rank = {
@@ -27,7 +29,7 @@ const fetchRanks = async (params: {
   shopId: number;
   page: number;
   pageSize: number;
-}): Promise<RanksResponse> => {
+}, navigation?: NavigationProp<RootStackParamList>): Promise<RanksResponse> => {
   const { shopId, page, pageSize } = params;
   const token = await getAuthToken();
   const url = `${API_URL}/api/ranks?ShopId=${encodeURIComponent(shopId)}&page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}`;
@@ -37,6 +39,9 @@ const fetchRanks = async (params: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
+  if (navigation && handle403Error(response, navigation)) {
+    throw new Error('403 Forbidden');
+  }
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Failed to fetch ranks: ${response.status} ${text}`);
@@ -49,7 +54,7 @@ const createRank = async (data: {
   benefit: number;
   threshold: number | null;
   shopId: number;
-}): Promise<boolean> => {
+}, navigation?: NavigationProp<RootStackParamList>): Promise<boolean> => {
   const token = await getAuthToken();
   const response = await fetch(`${API_URL}/api/ranks`, {
     method: 'POST',
@@ -59,10 +64,13 @@ const createRank = async (data: {
     },
     body: JSON.stringify(data),
   });
+  if (navigation && handle403Error(response, navigation)) {
+    return false;
+  }
   return response.ok;
 };
 
-const deleteRank = async (rankId: number): Promise<boolean> => {
+const deleteRank = async (rankId: number, navigation?: NavigationProp<RootStackParamList>): Promise<boolean> => {
   const token = await getAuthToken();
   const response = await fetch(`${API_URL}/api/ranks/${rankId}`, {
     method: 'DELETE',
@@ -70,6 +78,9 @@ const deleteRank = async (rankId: number): Promise<boolean> => {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
+  if (navigation && handle403Error(response, navigation)) {
+    return false;
+  }
   return response.ok;
 };
 
@@ -124,7 +135,7 @@ const RankItem = ({ item, onDelete, onEdit }: { item: Rank; onDelete: (rankId: n
 };
 
 const RankScreen = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const queryClient = useQueryClient();
   const PAGE_SIZE = 10;
   const [shopId, setShopId] = useState<number | null>(null);
@@ -164,7 +175,7 @@ const RankScreen = () => {
   } = useInfiniteQuery({
     queryKey: ['ranks', shopId],
     queryFn: ({ pageParam = 1 }) =>
-      fetchRanks({ shopId: shopId as number, page: pageParam as number, pageSize: PAGE_SIZE }),
+      fetchRanks({ shopId: shopId as number, page: pageParam as number, pageSize: PAGE_SIZE }, navigation),
     initialPageParam: 1,
     getNextPageParam: (lastPage) => {
       if (lastPage.page < lastPage.totalPages) return lastPage.page + 1;
@@ -174,7 +185,7 @@ const RankScreen = () => {
   });
 
   const createRankMutation = useMutation({
-    mutationFn: createRank,
+    mutationFn: (data: Parameters<typeof createRank>[0]) => createRank(data, navigation),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ranks', shopId] });
       setCreateModalVisible(false);
@@ -187,7 +198,7 @@ const RankScreen = () => {
   });
 
   const deleteRankMutation = useMutation({
-    mutationFn: deleteRank,
+    mutationFn: (rankId: number) => deleteRank(rankId, navigation),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ranks', shopId] });
       Alert.alert('Thành công', 'Xóa xếp hạng thành công');
@@ -202,7 +213,7 @@ const RankScreen = () => {
     benefit: number;
     threshold: number | null;
     shopId: number;
-  }): Promise<boolean> => {
+  }, navigation?: NavigationProp<RootStackParamList>): Promise<boolean> => {
     const token = await getAuthToken();
     const response = await fetch(`${API_URL}/api/ranks/${rankId}`, {
       method: 'PUT',
@@ -212,11 +223,14 @@ const RankScreen = () => {
       },
       body: JSON.stringify(data),
     });
+    if (navigation && handle403Error(response, navigation)) {
+      return false;
+    }
     return response.ok;
   };
 
   const updateRankMutation = useMutation({
-    mutationFn: ({ rankId, data }: { rankId: number; data: any }) => updateRank(rankId, data),
+    mutationFn: ({ rankId, data }: { rankId: number; data: any }) => updateRank(rankId, data, navigation),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ranks', shopId] });
       setEditModalVisible(false);

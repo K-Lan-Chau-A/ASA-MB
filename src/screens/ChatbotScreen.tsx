@@ -18,6 +18,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import API_URL from '../config/api';
 import { getAuthToken, getShopId, getUserId } from '../services/AuthStore';
+import { handle403Error } from '../utils/apiErrorHandler';
 
 interface Message {
   id: string;
@@ -38,23 +39,24 @@ const ChatbotScreen = () => {
   const [hasMore, setHasMore] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [currentShopId, setCurrentShopId] = useState<number | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const flatListRef = useRef<FlatList<Message>>(null);
 
   // Cache functions
-  const getCacheKey = (shopId: number) => `chatbot_messages_${shopId}`;
+  const getCacheKey = (shopId: number, userId: number) => `chatbot_messages_${shopId}_${userId}`;
   
-  const saveMessagesToCache = async (messages: Message[], shopId: number) => {
+  const saveMessagesToCache = async (messages: Message[], shopId: number, userId: number) => {
     try {
-      const cacheKey = getCacheKey(shopId);
+      const cacheKey = getCacheKey(shopId, userId);
       await AsyncStorage.setItem(cacheKey, JSON.stringify(messages));
     } catch (error) {
       console.error('Error saving messages to cache:', error);
     }
   };
 
-  const loadMessagesFromCache = async (shopId: number): Promise<Message[]> => {
+  const loadMessagesFromCache = async (shopId: number, userId: number): Promise<Message[]> => {
     try {
-      const cacheKey = getCacheKey(shopId);
+      const cacheKey = getCacheKey(shopId, userId);
       const cached = await AsyncStorage.getItem(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached);
@@ -70,9 +72,9 @@ const ChatbotScreen = () => {
     return [];
   };
 
-  const clearCacheForShop = async (shopId: number) => {
+  const clearCacheForShop = async (shopId: number, userId: number) => {
     try {
-      const cacheKey = getCacheKey(shopId);
+      const cacheKey = getCacheKey(shopId, userId);
       await AsyncStorage.removeItem(cacheKey);
     } catch (error) {
       console.error('Error clearing cache for shop:', error);
@@ -115,9 +117,14 @@ const ChatbotScreen = () => {
     try {
       if (replace) { setIsFetching(true); } else { setIsFetchingMore(true); }
       
+      const token = await getAuthToken();
+      const shopId = (await getShopId()) ?? 0;
+      const userId = (await getUserId()) ?? 0;
+      if (!token || !(shopId > 0) || !(userId > 0)) return;
+
       // Load from cache first if replacing (initial load)
       if (replace) {
-        const cachedMessages = await loadMessagesFromCache(shopId);
+        const cachedMessages = await loadMessagesFromCache(shopId, userId);
         if (cachedMessages.length > 0) {
           setMessages(cachedMessages);
           setIsFetching(false);
@@ -125,12 +132,10 @@ const ChatbotScreen = () => {
           return;
         }
       }
-      
-      const token = await getAuthToken();
-      const shopId = (await getShopId()) ?? 0;
-      if (!token || !(shopId > 0)) return;
+
       const url = `${API_URL}/api/chat-messages?ShopId=${shopId}&UserId=${userId}&page=${targetPage}&pageSize=${pageSize}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (handle403Error(res, navigation)) return;
       const json = await res.json().catch(() => null);
       const items = extractItems(json);
       const mapped: Message[] = items.map(mapServerMessageToLocal).filter(Boolean) as Message[];
@@ -150,7 +155,7 @@ const ChatbotScreen = () => {
       // Save to cache
       if (replace) {
         const finalMessages = mapped;
-        await saveMessagesToCache(finalMessages, shopId);
+        await saveMessagesToCache(finalMessages, shopId, userId);
       }
 
       setHasMore(mapped.length >= pageSize);
@@ -166,7 +171,8 @@ const ChatbotScreen = () => {
 
     const token = await getAuthToken();
     const shopId = (await getShopId()) ?? 0;
-    if (!token || !(shopId > 0)) {
+    const userId = (await getUserId()) ?? 0;
+    if (!token || !(shopId > 0) || !(userId > 0)) {
       Alert.alert('Lỗi', 'Thiếu thông tin đăng nhập hoặc shopId');
       return;
     }
@@ -180,7 +186,7 @@ const ChatbotScreen = () => {
 
     setMessages(prev => {
       const newMessages = [...prev, userMessage];
-      saveMessagesToCache(newMessages, shopId);
+      saveMessagesToCache(newMessages, shopId, userId);
       return newMessages;
     });
     setInputText('');
@@ -198,6 +204,7 @@ const ChatbotScreen = () => {
         },
         body: JSON.stringify({ userId, content: messageText.trim(), sender: 'user' }),
       });
+      if (handle403Error(res, navigation)) return;
       const json: any = await res.json().catch(() => null);
       const aiRaw: string | null =
         (json && json.data && json.data.aiMessage && typeof json.data.aiMessage.content === 'string')
@@ -218,7 +225,7 @@ const ChatbotScreen = () => {
       };
       setMessages(prev => {
         const newMessages = [...prev, aiResponse];
-        saveMessagesToCache(newMessages, shopId);
+        saveMessagesToCache(newMessages, shopId, userId);
         return newMessages;
       });
     } catch (error: any) {
@@ -230,7 +237,7 @@ const ChatbotScreen = () => {
       };
       setMessages(prev => {
         const newMessages = [...prev, aiResponse];
-        saveMessagesToCache(newMessages, shopId);
+        saveMessagesToCache(newMessages, shopId, userId);
         return newMessages;
       });
       try { console.error('[Chatbot][sendMessage] error:', error); } catch {}
@@ -390,7 +397,8 @@ const ChatbotScreen = () => {
   const handleQuickQuestion = async (question: string) => {
     const token = await getAuthToken();
     const shopId = (await getShopId()) ?? 0;
-    if (!token || !(shopId > 0)) {
+    const userId = (await getUserId()) ?? 0;
+    if (!token || !(shopId > 0) || !(userId > 0)) {
       Alert.alert('Lỗi', 'Thiếu thông tin đăng nhập hoặc shopId');
       return;
     }
@@ -404,7 +412,7 @@ const ChatbotScreen = () => {
     };
     setMessages(prev => {
       const newMessages = [...prev, userMessage];
-      saveMessagesToCache(newMessages, shopId);
+      saveMessagesToCache(newMessages, shopId, userId);
       return newMessages;
     });
     scrollToBottom();
@@ -414,6 +422,7 @@ const ChatbotScreen = () => {
       const res = await fetch(`${API_URL}/api/Chatbot/${shopId}/analytics/${path}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (handle403Error(res, navigation)) return;
       const json: any = await res.json().catch(() => null);
       const text: string = json ? formatAnalytics(path, json) : 'Không có dữ liệu';
       const aiResponse: Message = {
@@ -424,7 +433,7 @@ const ChatbotScreen = () => {
       };
       setMessages(prev => {
         const newMessages = [...prev, aiResponse];
-        saveMessagesToCache(newMessages, shopId);
+        saveMessagesToCache(newMessages, shopId, userId);
         return newMessages;
       });
     } catch (error: any) {
@@ -436,7 +445,7 @@ const ChatbotScreen = () => {
       };
       setMessages(prev => {
         const newMessages = [...prev, aiResponse];
-        saveMessagesToCache(newMessages, shopId);
+        saveMessagesToCache(newMessages, shopId, userId);
         return newMessages;
       });
       try { console.error('[Chatbot][quick] error:', error); } catch {}
@@ -494,9 +503,11 @@ const ChatbotScreen = () => {
     // Load cached messages first, then fetch from server if needed
     const loadInitialMessages = async () => {
       const shopId = (await getShopId()) ?? 0;
-      if (shopId > 0) {
+      const userId = (await getUserId()) ?? 0;
+      if (shopId > 0 && userId > 0) {
         setCurrentShopId(shopId);
-        const cachedMessages = await loadMessagesFromCache(shopId);
+        setCurrentUserId(userId);
+        const cachedMessages = await loadMessagesFromCache(shopId, userId);
         if (cachedMessages.length > 0) {
           setMessages(cachedMessages);
           scrollToBottom();
@@ -508,27 +519,29 @@ const ChatbotScreen = () => {
     loadInitialMessages();
   }, []);
 
-  // Watch for shop changes and clear cache if needed
+  // Watch for shop or user changes and reload if needed
   useEffect(() => {
-    const checkShopChange = async () => {
+    const checkIdentityChange = async () => {
       const shopId = (await getShopId()) ?? 0;
-      if (shopId > 0 && currentShopId !== null && currentShopId !== shopId) {
-        // Shop changed, clear messages and load new shop's messages
+      const userId = (await getUserId()) ?? 0;
+      const shopChanged = shopId > 0 && currentShopId !== null && currentShopId !== shopId;
+      const userChanged = userId > 0 && currentUserId !== null && currentUserId !== userId;
+      if (shopChanged || userChanged) {
         setMessages([]);
         setCurrentShopId(shopId);
-        const cachedMessages = await loadMessagesFromCache(shopId);
+        setCurrentUserId(userId);
+        const cachedMessages = await loadMessagesFromCache(shopId, userId);
         if (cachedMessages.length > 0) {
           setMessages(cachedMessages);
           scrollToBottom();
         }
-        // Fetch latest messages from server
         fetchMessagesPage(1, true);
       }
     };
-    
-    const interval = setInterval(checkShopChange, 1000); // Check every second
+
+    const interval = setInterval(checkIdentityChange, 1000); // Check every second
     return () => clearInterval(interval);
-  }, [currentShopId]);
+  }, [currentShopId, currentUserId]);
 
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {

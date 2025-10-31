@@ -6,6 +6,9 @@ import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import API_URL from '../config/api';
 import { getAuthToken, getShopId, getUserId } from '../services/AuthStore';
+import { handle403Error } from '../utils/apiErrorHandler';
+import { NavigationProp } from '@react-navigation/native';
+import { RootStackParamList } from '../types/navigation';
 
 type Staff = {
   userId: number;
@@ -20,7 +23,7 @@ type Staff = {
 };
 
 const ManageAccount = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -60,6 +63,7 @@ const ManageAccount = () => {
       const res = await fetch(`${API_URL}/api/userfeature?UserId=${ownerUserId}&page=1&pageSize=10`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (handle403Error(res, navigation)) return;
       const json = await res.json().catch(() => null);
       const items = extractItems(json);
       const mapped = items
@@ -85,6 +89,7 @@ const ManageAccount = () => {
       const res = await fetch(`${API_URL}/api/users?ShopId=${shopId}&page=1&pageSize=10`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (handle403Error(res, navigation)) return;
       const json = await res.json().catch(() => null);
       const items = extractItems(json);
       const onlyStaff = items.filter((u: any) => Number(u?.role) === 2);
@@ -187,6 +192,7 @@ const ManageAccount = () => {
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
       });
+      if (handle403Error(res, navigation)) return;
       try { console.log('[CreateStaff] HTTP status:', res.status, res.statusText); } catch {}
       // We don't strictly parse response here; assume success on 2xx
       if (res.ok) {
@@ -258,6 +264,7 @@ const ManageAccount = () => {
       const res = await fetch(`${API_URL}/api/userfeature?UserId=${userId}&page=1&pageSize=10`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (handle403Error(res, navigation)) return {};
       const json = await res.json().catch(() => null);
       const items = extractItems(json);
       const userFeatures: Record<number, boolean> = {};
@@ -329,6 +336,7 @@ const ManageAccount = () => {
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify(payload),
         });
+        if (handle403Error(resp, navigation)) return;
         try { console.log('[UserFeature][update] status:', resp.status); } catch {}
         return resp;
       })();

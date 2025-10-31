@@ -4,6 +4,7 @@ export type RootStackParamList = {
   Notification: undefined;
   Scanner: { returnScreen?: 'Order' | 'AddProduct' | 'Products'; barcode?: string } | undefined;
   ChatbotScreen: undefined;
+  ForbiddenScreen: undefined;
   PromotionScreen: undefined;
   VoucherScreen: undefined;
   InventoryTransactionScreen: undefined;

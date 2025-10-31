@@ -5,6 +5,7 @@ import { useRoute, useNavigation, NavigationProp, RouteProp } from '@react-navig
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import API_URL from '../config/api';
+import { handle403Error } from '../utils/apiErrorHandler';
 import { getAuthToken, getShopId } from '../services/AuthStore';
 import { RootStackParamList } from '../types/navigation';
 
@@ -55,6 +56,7 @@ const OrderDetailScreen = () => {
       if (!token || !shopId || !orderId) return;
       const url = `${API_URL}/api/orders?OrderId=${orderId}&ShopId=${shopId}&page=1&pageSize=10`;
       const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      if (handle403Error(res, navigation)) return;
       const json = await res.json().catch(() => null);
       const items: any[] = Array.isArray(json?.items)
         ? json.items
@@ -104,6 +106,7 @@ const OrderDetailScreen = () => {
       // 1) Load order details
       const url = `${API_URL}/api/order-details?OrderId=${orderId}&page=1&pageSize=200`;
       const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      if (handle403Error(res, navigation)) return;
       const json = await res.json().catch(() => null);
       const items: any[] = Array.isArray(json?.items)
         ? json.items
@@ -166,6 +169,7 @@ const OrderDetailScreen = () => {
         const shopId = (await getShopId()) ?? 0;
         const url = `${API_URL}/api/vouchers?VoucherId=${header.voucherId}&ShopId=${shopId}&page=1&pageSize=1`;
         const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      if (handle403Error(res, navigation)) return;
         const data = await res.json().catch(() => ({}));
         const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
         const v = items[0] || null;

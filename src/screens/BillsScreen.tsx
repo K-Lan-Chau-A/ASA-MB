@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, ScrollView, TextInput, Keyboard, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
+import { RootStackParamList } from '../types/navigation';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Picker } from '@react-native-picker/picker';
 import API_URL from '../config/api';
+import { handle403Error } from '../utils/apiErrorHandler';
 import { getAuthToken, getShopId } from '../services/AuthStore';
 
 interface BillItem {
@@ -25,7 +27,7 @@ interface ShiftItem {
 }
 
 const BillsScreen = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [selected, setSelected] = useState<BillItem | null>(null);
@@ -77,6 +79,7 @@ const BillsScreen = () => {
       const res = await fetch(`${API_URL}/api/shifts?ShopId=${shopId}&page=1&pageSize=100`, {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       });
+      if (handle403Error(res, navigation)) return;
       const json = await res.json().catch(() => null);
       const items = Array.isArray(json?.items)
         ? json.items
@@ -112,6 +115,7 @@ const BillsScreen = () => {
       if (!token || !shopId) return;
       const url = `${API_URL}/api/orders?ShopId=${shopId}&ShiftId=${shiftId}&page=1&pageSize=100`;
       const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      if (handle403Error(res, navigation)) return;
       const json = await res.json().catch(() => null);
       const items = Array.isArray(json?.items)
         ? json.items
@@ -163,6 +167,7 @@ const BillsScreen = () => {
       if (!token || !shopId) return;
       const url = `${API_URL}/api/order-details?ShopId=${shopId}&OrderId=${orderId}&page=1&pageSize=100`;
       const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      if (handle403Error(res, navigation)) return;
       const json = await res.json().catch(() => null);
       const items = Array.isArray(json?.items)
         ? json.items
@@ -203,6 +208,7 @@ const BillsScreen = () => {
       
       const url = `${API_URL}/api/orders?OrderId=${idNum}&ShopId=${shopId}&page=1&pageSize=1`;
       const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      if (handle403Error(res, navigation)) return;
       const json = await res.json().catch(() => null);
       const items = Array.isArray(json?.items)
         ? json.items

@@ -14,6 +14,8 @@ import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navig
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import { RootStackParamList } from '../types/navigation';
+import { navigateIfAuthorized } from '../utils/navigationGuard';
+import API_URL from '../config/api';
 
 const ScannerScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
@@ -121,7 +123,7 @@ const ScannerScreen = () => {
     if (returnScreen === 'AddProduct') {
       // Navigate back to AddProduct screen with barcode
       console.log('📱 Returning to AddProduct with barcode:', code);
-      navigation.navigate('AddProduct', { barcode: code });
+      navigateIfAuthorized(navigation, 'AddProduct', { buildUrl: (sid) => `${API_URL}/api/categories?ShopId=${sid}&page=1&pageSize=1` }, { barcode: code });
     } else if (returnScreen === 'Products') {
       // Go back to Products screen - just navigate back
       console.log('📱 Returning to Products screen');

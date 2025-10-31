@@ -6,6 +6,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import API_URL from '../config/api';
 import { getAuthToken, getShopId } from '../services/AuthStore';
 import { RootStackParamList } from '../types/navigation';
+import { handle403Error } from '../utils/apiErrorHandler';
 
 interface AccountItem {
   id?: number;
@@ -45,6 +46,7 @@ const ManageCustomerScreen = () => {
       const res = await fetch(`${API_URL}/api/customers?ShopId=${shopId}&page=1&pageSize=100`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
+      if (handle403Error(res, navigation)) return;
       const json = await res.json().catch(() => null);
       const arr: any[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : [];
       const mapped: AccountItem[] = arr.map((c: any) => ({
@@ -97,6 +99,7 @@ const ManageCustomerScreen = () => {
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify(payload),
       });
+      if (handle403Error(res, navigation)) return;
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { Alert.alert('Lỗi', data?.message || 'Tạo khách hàng thất bại'); return; }
       Alert.alert('Thành công', 'Đã tạo khách hàng');

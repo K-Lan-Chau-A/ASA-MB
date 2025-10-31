@@ -6,6 +6,8 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
 import API_URL from '../config/api';
 import { getAuthToken, getShiftId, refreshOpenShiftId, clearShiftId, logoutLocal } from '../services/AuthStore';
+import { handle403Error } from '../utils/apiErrorHandler';
+import { navigateIfAuthorized } from '../utils/navigationGuard';
 
 interface MenuItem {
   id: number;
@@ -49,6 +51,7 @@ const MoreScreen = () => {
         },
         body: JSON.stringify(payload),
       });
+      if (handle403Error(res, navigation)) return;
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const msg = data?.message || 'Đóng ca thất bại. Vui lòng thử lại.';
@@ -94,7 +97,7 @@ const MoreScreen = () => {
       icon: 'package-variant-closed', 
       iconColor: '#009DA5', 
       bgColor: '#FFFFFF',
-      onPress: () => navigation.navigate('AddProduct') 
+      onPress: () => navigateIfAuthorized(navigation, 'AddProduct', { buildUrl: (sid) => `${API_URL}/api/categories?ShopId=${sid}&page=1&pageSize=1` }) 
     },
     { 
       id: 3, 
@@ -102,7 +105,7 @@ const MoreScreen = () => {
       icon: 'gift', 
       iconColor: '#009DA5', 
       bgColor: '#FFFFFF',
-      onPress: () => navigation.navigate('VoucherScreen') 
+      onPress: () => navigateIfAuthorized(navigation, 'VoucherScreen', { buildUrl: (sid) => `${API_URL}/api/vouchers?ShopId=${sid}&page=1&pageSize=1` }) 
     },
     { 
       id: 4, 
@@ -110,7 +113,7 @@ const MoreScreen = () => {
       icon: 'sale', 
       iconColor: '#009DA5', 
       bgColor: '#FFFFFF',
-      onPress: () => navigation.navigate('PromotionScreen') 
+      onPress: () => navigateIfAuthorized(navigation, 'PromotionScreen', { buildUrl: (sid) => `${API_URL}/api/promotions?ShopId=${sid}&page=1&pageSize=1` }) 
     },
     { 
       id: 5, 
@@ -118,7 +121,7 @@ const MoreScreen = () => {
       icon: 'history', 
       iconColor: '#009DA5', 
       bgColor: '#FFFFFF',
-      onPress: () => navigation.navigate('InventoryTransactionScreen') 
+      onPress: () => navigateIfAuthorized(navigation, 'InventoryTransactionScreen', { buildUrl: (sid) => `${API_URL}/api/inventory-transactions?ShopId=${sid}&page=1&pageSize=1` }) 
     },
     { 
       id: 6, 
@@ -126,7 +129,7 @@ const MoreScreen = () => {
       icon: 'account-group', 
       iconColor: '#009DA5', 
       bgColor: '#FFFFFF',
-      onPress: () => navigation.navigate('ManageCustomerScreen') 
+      onPress: () => navigateIfAuthorized(navigation, 'ManageCustomerScreen', { buildUrl: (sid) => `${API_URL}/api/customers?ShopId=${sid}&page=1&pageSize=1` }) 
     },
     { 
       id: 7, 
@@ -134,7 +137,7 @@ const MoreScreen = () => {
       icon: 'view-grid', 
       iconColor: '#009DA5', 
       bgColor: '#FFFFFF',
-      onPress: () => navigation.navigate('ManageCategoryScreen') 
+      onPress: () => navigateIfAuthorized(navigation, 'ManageCategoryScreen', { buildUrl: (sid) => `${API_URL}/api/categories?ShopId=${sid}&page=1&pageSize=1` }) 
     },
     { 
       id: 8, 
@@ -142,7 +145,7 @@ const MoreScreen = () => {
       icon: 'clipboard-text-clock', 
       iconColor: '#009DA5', 
       bgColor: '#FFFFFF',
-      onPress: () => navigation.navigate('LogActivityScreen') 
+      onPress: () => navigateIfAuthorized(navigation, 'LogActivityScreen', { buildUrl: (sid) => `${API_URL}/api/log-activities?ShopId=${sid}&page=1&pageSize=1` }) 
     },
     { 
       id: 9, 
@@ -158,7 +161,7 @@ const MoreScreen = () => {
       icon: 'medal', 
       iconColor: '#009DA5', 
       bgColor: '#FFFFFF',
-      onPress: () => navigation.navigate('RankScreen') 
+      onPress: () => navigateIfAuthorized(navigation, 'RankScreen', { buildUrl: (sid) => `${API_URL}/api/ranks?ShopId=${sid}&page=1&pageSize=1` }) 
     },
     { 
       id: 11, 
@@ -174,7 +177,7 @@ const MoreScreen = () => {
       icon: 'chart-box', 
       iconColor: '#009DA5', 
       bgColor: '#FFFFFF',
-      onPress: () => navigation.navigate('ReportScreen') 
+      onPress: () => navigateIfAuthorized(navigation, 'ReportScreen', { buildUrl: (sid) => `${API_URL}/api/reports?ShopId=${sid}&page=1&pageSize=1` }) 
     },
     { 
       id: 13, 
@@ -182,7 +185,7 @@ const MoreScreen = () => {
       icon: 'cog', 
       iconColor: '#009DA5', 
       bgColor: '#FFFFFF',
-      onPress: () => navigation.navigate('SettingScreen') 
+      onPress: () => navigateIfAuthorized(navigation, 'SettingScreen', { buildUrl: (sid) => `${API_URL}/api/shops?ShopId=${sid}&page=1&pageSize=1` }) 
     },
     { 
       id: 14, 

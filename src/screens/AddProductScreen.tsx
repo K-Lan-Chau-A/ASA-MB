@@ -22,6 +22,7 @@ import API_URL from '../config/api';
 import { getShopId, getAuthToken } from '../services/AuthStore';
 import { useInvalidateProducts } from '../services/products';
 import { useQueryClient } from '@tanstack/react-query';
+import { handle403Error } from '../utils/apiErrorHandler';
 
 interface NewProduct {
   barcode: string;
@@ -72,6 +73,8 @@ const AddProductScreen = () => {
   const [shopId, setShopId] = useState<number>(0);
   const isEditing = Boolean((route.params as any)?.product?.id);
   const editingId = (route.params as any)?.product?.id ? String((route.params as any).product.id) : '';
+  // Ref to track if we've already navigated to ForbiddenScreen (prevent double navigation)
+  const hasNavigatedToForbiddenRef = React.useRef(false);
   
   const [product, setProduct] = useState<NewProduct>({
     // Đừng lấy barcode từ params để tránh reset state khi quét mã và quay lại
@@ -295,6 +298,13 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         let res = await fetch(`${API_URL}/api/categories?ShopId=${loadedShopId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
+        // Replace AddProductScreen with ForbiddenScreen if 403 (don't keep AddProductScreen in stack)
+        // Only replace once - use ref to prevent double navigation
+        if (res.status === 403 && !hasNavigatedToForbiddenRef.current) {
+          hasNavigatedToForbiddenRef.current = true;
+          (navigation as any).replace('ForbiddenScreen');
+          return;
+        }
         let data = await res.json();
         let arr: any[] | null = null;
         if (Array.isArray(data)) arr = data;
@@ -304,6 +314,12 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
           res = await fetch(`${API_URL}/api/categories?shopId=${loadedShopId}`, {
             headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           });
+          // Don't replace again if already navigated to ForbiddenScreen
+          if (res.status === 403 && !hasNavigatedToForbiddenRef.current) {
+            hasNavigatedToForbiddenRef.current = true;
+            (navigation as any).replace('ForbiddenScreen');
+            return;
+          }
           data = await res.json();
           if (Array.isArray(data)) arr = data; else if (Array.isArray(data?.items)) arr = data.items; else arr = [];
         }
@@ -355,6 +371,12 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=1000`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
+        // Don't replace again if already navigated to ForbiddenScreen (categories fetch might have done it)
+        if (res.status === 403 && !hasNavigatedToForbiddenRef.current) {
+          hasNavigatedToForbiddenRef.current = true;
+          (navigation as any).replace('ForbiddenScreen');
+          return;
+        }
         const data = await res.json();
         const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
         const products: Product[] = items.map((item: any) => ({
@@ -391,6 +413,8 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&Barcode=${encodeURIComponent(bc)}&page=1&pageSize=1`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
+        // Don't replace on barcode prefill - this is optional and happens after screen loads
+        if (handle403Error(res, navigation, false)) return;
         const data = await res.json().catch(() => ({}));
         const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
         const found: any = items[0];
@@ -414,6 +438,8 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
             const puRes = await fetch(`${API_URL}/api/product-units?ShopId=${shopId}&ProductId=${prodId}&page=1&pageSize=100`, {
               headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
+            // Don't replace on unit fetch - this is optional and happens after screen loads
+            if (handle403Error(puRes, navigation, false)) return;
             const puData = await puRes.json().catch(() => ({}));
             const puItems: any[] = Array.isArray(puData?.items) ? puData.items : Array.isArray(puData) ? puData : [];
             if (puItems.length > 0) {
@@ -454,6 +480,8 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&ProductId=${pid}&page=1&pageSize=1`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
+        // Don't replace when editing - user is already on the screen
+        if (handle403Error(res, navigation, false)) return;
         const data = await res.json().catch(() => null);
         const items: any[] = Array.isArray(data?.items)
           ? data.items
@@ -506,6 +534,8 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         },
         body: JSON.stringify(payload),
       });
+      // Don't replace when creating category - user is already on the screen
+      if (handle403Error(res, navigation, false)) return;
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const msg = data?.message || 'Tạo nhóm hàng thất bại';
@@ -745,6 +775,8 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
         },
         body: form,
       });
+      // Don't replace when saving - user is already on the screen
+      if (handle403Error(res, navigation, false)) return;
 
       const result = await res.json().catch(() => ({}));
       if (!res.ok) {

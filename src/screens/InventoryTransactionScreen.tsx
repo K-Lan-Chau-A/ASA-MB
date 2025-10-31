@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import API_URL from '../config/api';
+import { handle403Error } from '../utils/apiErrorHandler';
 import { getAuthToken, getShopId } from '../services/AuthStore';
 import { RootStackParamList } from '../types/navigation';
 
@@ -53,6 +54,7 @@ const InventoryTransactionScreen = () => {
       const tRes = await fetch(`${API_URL}/api/inventory-transactions?ShopId=${shopId}${typeQuery}&page=${targetPage}&pageSize=${pageSize}` , {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
+      if (handle403Error(tRes, navigation)) return;
       const tData = await tRes.json().catch(() => ({}));
       const tItems: any[] = Array.isArray(tData?.items) ? tData.items : Array.isArray(tData) ? tData : [];
       const mappedTxns: Txn[] = tItems.map((i: any) => ({
@@ -89,6 +91,7 @@ const InventoryTransactionScreen = () => {
         const pRes = await fetch(`${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=500`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
+        if (handle403Error(pRes, navigation)) return;
         const pData = await pRes.json().catch(() => ({}));
         const pItems: any[] = Array.isArray(pData?.items) ? pData.items : Array.isArray(pData) ? pData : [];
         const nameMap: Record<number, string> = {};
@@ -107,6 +110,7 @@ const InventoryTransactionScreen = () => {
               const uRes = await fetch(`${API_URL}/api/product-units?ShopId=${shopId}&ProductId=${pid}&page=1&pageSize=50`, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
               });
+              if (handle403Error(uRes, navigation)) return;
               const uData = await uRes.json().catch(() => ({}));
               const uItems: any[] = Array.isArray(uData?.items) ? uData.items : [];
               const map: Record<number, string> = {};

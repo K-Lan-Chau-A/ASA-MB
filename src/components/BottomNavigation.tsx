@@ -15,6 +15,7 @@ import MoreScreen from '../screens/MoreScreen';
 import NotificationScreen from '../screens/NotificationScreen';
 import OrderScreen from '../screens/OrderScreen';
 import NotificationIcon from './NotificationIcon';
+import { navigateIfAuthorized } from '../utils/navigationGuard';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -36,6 +37,19 @@ const AddOrderButton = () => {
 
   const handleOrderPress = useCallback(async () => {
     try {
+      // First check authorization before proceeding
+      const shopId = (await getShopId()) ?? 0;
+      const token = await getAuthToken();
+      if (token && shopId > 0) {
+        const authCheck = await fetch(`${API_URL}/api/products?ShopId=${shopId}&Status=1&page=1&pageSize=1`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (authCheck.status === 403) {
+          navigation.navigate('ForbiddenScreen');
+          return;
+        }
+      }
+
       // First check if we have a local shiftId
       let existingShiftId = await getShiftId();
       
@@ -78,6 +92,20 @@ const AddOrderButton = () => {
       setOpenShiftVisible(true);
     } catch (error) {
       console.log('[BottomNavigation] Error in handleOrderPress:', error);
+      // On network error, allow navigation (fallback to in-screen handling)
+      const shopId = (await getShopId()) ?? 0;
+      const token = await getAuthToken();
+      if (token && shopId > 0) {
+        try {
+          const authCheck = await fetch(`${API_URL}/api/products?ShopId=${shopId}&Status=1&page=1&pageSize=1`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (authCheck.status === 403) {
+            navigation.navigate('ForbiddenScreen');
+            return;
+          }
+        } catch {}
+      }
       setOpenShiftVisible(true);
     }
   }, [navigation]);
@@ -236,6 +264,12 @@ const BottomNavigation = () => {
               <Icon name="home-outline" color={color} size={24} />
             ),
           }}
+          listeners={({ navigation }) => ({
+            tabPress: async (e) => {
+              e.preventDefault();
+              await navigateIfAuthorized(navigation as any, 'TrangChu' as any, { buildUrl: (sid) => `${API_URL}/api/orders?ShopId=${sid}&page=1&pageSize=1` });
+            },
+          })}
         />
         <Tab.Screen
           name="HoaDon"
@@ -247,6 +281,12 @@ const BottomNavigation = () => {
               <Icon name="receipt" color={color} size={24} />
             ),
           }}
+          listeners={({ navigation }) => ({
+            tabPress: async (e) => {
+              e.preventDefault();
+              await navigateIfAuthorized(navigation as any, 'HoaDon' as any, { buildUrl: (sid) => `${API_URL}/api/orders?ShopId=${sid}&page=1&pageSize=1` });
+            },
+          })}
         />
         <Tab.Screen
           name="LenDon"
@@ -265,6 +305,12 @@ const BottomNavigation = () => {
               <Icon name="cube-outline" color={color} size={24} />
             ),
           }}
+          listeners={({ navigation }) => ({
+            tabPress: async (e) => {
+              e.preventDefault();
+              await navigateIfAuthorized(navigation as any, 'HangHoa' as any, { buildUrl: (sid) => `${API_URL}/api/products?ShopId=${sid}&page=1&pageSize=1` });
+            },
+          })}
         />
         <Tab.Screen
           name="NhieuHon"
@@ -276,6 +322,14 @@ const BottomNavigation = () => {
               <Icon name="menu" color={color} size={24} />
             ),
           }}
+          listeners={({ navigation }) => ({
+            tabPress: async (e) => {
+              e.preventDefault();
+              // MoreScreen itself doesn't need a guard since it's just a menu
+              // Individual menu items have their own guards
+              (navigation as any).navigate('NhieuHon' as any);
+            },
+          })}
         />
       </Tab.Navigator>
     </>

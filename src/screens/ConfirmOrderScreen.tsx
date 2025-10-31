@@ -22,6 +22,8 @@ import { clearGlobalOrderState } from './OrderScreen';
 import { Picker } from '@react-native-picker/picker';
 import API_URL from '../config/api';
 import { getAuthToken, getShopId, getShiftId, getSepayApiKey, getShopToken } from '../services/AuthStore';
+import { handle403Error } from '../utils/apiErrorHandler';
+import { navigateIfAuthorized } from '../utils/navigationGuard';
 import Tts from 'react-native-tts';
 
 interface Product {
@@ -93,6 +95,7 @@ const ConfirmOrderScreen = () => {
         const res = await fetch(`${API_URL}/api/vouchers?ShopId=${shopId}&page=1&pageSize=100`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
+        if (handle403Error(res, navigation)) return;
         const data = await res.json().catch(() => ({}));
         const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
         const now = new Date();
@@ -125,6 +128,7 @@ const ConfirmOrderScreen = () => {
           const res = await fetch(`${API_URL}/api/customers/${selectedCustomerId}?ShopId=${shopId}`, {
             headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           });
+          if (handle403Error(res, navigation)) return;
           const data = await res.json().catch(() => ({}));
           const c: any = data?.data || data || {};
           const idNum = Number(c?.customerId ?? c?.id ?? selectedCustomerId);
@@ -259,6 +263,7 @@ const ConfirmOrderScreen = () => {
         },
         body: JSON.stringify(body),
       });
+      if (handle403Error(res, navigation)) return;
       if (!res.ok) {
         const txt = await res.text();
         throw new Error(txt || 'HTTP error');
@@ -281,6 +286,7 @@ const ConfirmOrderScreen = () => {
       const res = await fetch(`${API_URL}/api/product-units?ShopId=${shopId}&ProductId=${productId}&page=1&pageSize=50`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
+      if (handle403Error(res, navigation)) return 0;
       const data = await res.json();
       const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
       const found = items.find((u: any) => {
@@ -395,7 +401,7 @@ const ConfirmOrderScreen = () => {
         },
         body: JSON.stringify(payload),
       });
-
+      if (handle403Error(res, navigation)) return;
       if (!res.ok) {
         const msg = await res.text();
         try { console.log('[CreateOrder] HTTP', res.status, msg); } catch {}
@@ -439,6 +445,7 @@ const ConfirmOrderScreen = () => {
             const verifyRes = await fetch(`${API_URL}/api/orders?ShopId=${shopId}&page=1&pageSize=100`, {
               headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
+            if (handle403Error(verifyRes, navigation)) return;
             const verifyData = await verifyRes.json();
             const verifyItems: any[] = Array.isArray(verifyData?.items) ? verifyData.items : Array.isArray(verifyData) ? verifyData : [];
             const found = verifyItems.some((o: any) => Number(o.orderId ?? o.id) === Number(envelope.orderId));
@@ -528,7 +535,7 @@ const ConfirmOrderScreen = () => {
             { 
               text: 'Đến Cài đặt', 
               onPress: () => {
-                navigation.navigate('Setting');
+                navigateIfAuthorized(navigation, 'SettingScreen', { buildUrl: (sid) => `${API_URL}/api/shops?ShopId=${sid}` });
               }
             }
           ]
@@ -584,6 +591,7 @@ const ConfirmOrderScreen = () => {
       const res = await fetch(`${API_URL}/api/sepay/vietqr?orderId=${orderId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
+      if (handle403Error(res, navigation)) return;
       const data = await res.json();
       if (data?.success && data?.url) {
         try { console.log('[VietQR] url', data.url, 'amount', data.amount, 'orderId', data.orderId ?? orderId); } catch {}
@@ -779,7 +787,7 @@ const ConfirmOrderScreen = () => {
         const res = await fetch(`${API_URL}/api/orders?ShopId=${shopId}&page=1&pageSize=100`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
-        
+        if (handle403Error(res, navigation)) return;
         if (!res.ok) {
           console.log('[VietQR][poll] HTTP error', res.status, res.statusText);
           return;

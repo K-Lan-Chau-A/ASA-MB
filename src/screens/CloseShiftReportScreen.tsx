@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator
 import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import API_URL from '../config/api';
+import { handle403Error } from '../utils/apiErrorHandler';
 import { RootStackParamList } from '../types/navigation';
 import { getAuthToken } from '../services/AuthStore';
 
@@ -47,6 +48,7 @@ const CloseShiftReportScreen = () => {
         const res = await fetch(`${API_URL}/api/reports/shift-close-report?shiftId=${shiftId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
+        if (handle403Error(res, navigation)) return;
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           const msg = data?.message || 'Không tải được báo cáo chốt ca';

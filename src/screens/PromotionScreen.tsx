@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import API_URL from '../config/api';
+import { handle403Error } from '../utils/apiErrorHandler';
 import { getAuthToken, getShopId } from '../services/AuthStore';
 import { RootStackParamList } from '../types/navigation';
 
@@ -87,6 +88,7 @@ const PromotionScreen = () => {
       const token = await getAuthToken();
       const url = `${API_URL}/api/promotions?ShopId=${shopId}&page=1&pageSize=100`;
       const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      if (handle403Error(res, navigation)) return;
       const data = await res.json().catch(() => ({}));
       const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
       const mapped = items.map((p: any) => ({
@@ -147,6 +149,7 @@ const PromotionScreen = () => {
       const res = await fetch(`${API_URL}/api/promotion-products?PromotionId=${promotionId}&page=1&pageSize=100`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
+      if (handle403Error(res, navigation)) return;
       const data = await res.json().catch(() => ({}));
       const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
       const names = items
@@ -170,6 +173,7 @@ const PromotionScreen = () => {
       const res = await fetch(`${API_URL}/api/promotion-products?PromotionId=${promotionId}&page=1&pageSize=100`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
+      if (handle403Error(res, navigation)) return;
       const data = await res.json().catch(() => ({}));
       const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
       const unitIds = items.map((i: any) => Number(i.productUnitId ?? 0)).filter(id => id > 0);
@@ -192,7 +196,7 @@ const PromotionScreen = () => {
       setEndTime(promotion.endTime || '');
       setType(promotion.type);
       setValue(promotion.value.toString());
-      setSelectedProductUnitIds(productIds);
+      setSelectedProductUnitIds(productIds ?? []);
       setStatus(1); // Default to active
       
       setIsEditOpen(true);
@@ -208,6 +212,7 @@ const PromotionScreen = () => {
         method: 'DELETE',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
+      if (handle403Error(res, navigation)) return;
       
       if (res.ok) {
         Alert.alert('Thành công', 'Đã xóa khuyến mãi');
@@ -231,6 +236,7 @@ const PromotionScreen = () => {
         if (!shopId) return;
         const url = `${API_URL}/api/product-units?ShopId=${shopId}&page=1&pageSize=1000`;
         const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+        if (handle403Error(res, navigation)) return;
         const data = await res.json().catch(() => ({}));
         const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
         const mappedBase = items.map((u: any) => ({
@@ -242,6 +248,7 @@ const PromotionScreen = () => {
         // Load product -> category map to enable category filtering for units
         try {
           const prodRes = await fetch(`${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=1000`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+          if (handle403Error(prodRes, navigation)) return;
           const prodData = await prodRes.json().catch(() => ({}));
           const prodItems: any[] = Array.isArray(prodData?.items) ? prodData.items : Array.isArray(prodData) ? prodData : [];
           const catMap: Record<number, string> = {};
@@ -259,6 +266,7 @@ const PromotionScreen = () => {
         // Load categories
         try {
           const cRes = await fetch(`${API_URL}/api/categories?ShopId=${shopId}&page=1&pageSize=100`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+          if (handle403Error(cRes, navigation)) return;
           const cData = await cRes.json().catch(() => ({}));
           const cItems: any[] = Array.isArray(cData?.items) ? cData.items : [];
           const mappedCats = cItems.map((c: any) => ({ categoryId: Number(c.categoryId ?? 0), categoryName: String(c.categoryName ?? '') })).filter((c: any) => c.categoryName);
@@ -421,6 +429,7 @@ const PromotionScreen = () => {
         },
         body: JSON.stringify(payload),
       });
+      if (handle403Error(res, navigation)) return;
       const data = await res.json().catch(() => ({}));
       try {
         console.log(`[Promotion/${isEdit ? 'Update' : 'Create'}] status:`, res.status, res.statusText);

@@ -1,10 +1,12 @@
 import React, { useCallback, useMemo, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
+import { RootStackParamList } from '../types/navigation';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import API_URL from '../config/api';
+import { handle403Error } from '../utils/apiErrorHandler';
 import { getAuthToken, getShopId } from '../services/AuthStore';
 
 type LogActivity = {
@@ -28,7 +30,7 @@ const fetchLogActivities = async (params: {
   shopId: number;
   page: number;
   pageSize: number;
-}): Promise<LogActivitiesResponse> => {
+}, navigation?: NavigationProp<RootStackParamList>): Promise<LogActivitiesResponse> => {
   const { shopId, page, pageSize } = params;
   const token = await getAuthToken();
   const url = `${API_URL}/api/log-activities?ShopId=${encodeURIComponent(shopId)}&page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}`;
@@ -38,6 +40,9 @@ const fetchLogActivities = async (params: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
+  if (navigation && handle403Error(response, navigation)) {
+    throw new Error('403 Forbidden');
+  }
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Failed to fetch log activities: ${response.status} ${text}`);
@@ -98,7 +103,7 @@ const LogActivityItem = ({ item }: { item: LogActivity }) => {
 };
 
 const LogActivityScreen = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const PAGE_SIZE = 10;
   const [shopId, setShopId] = useState<number | null>(null);
 
@@ -124,7 +129,7 @@ const LogActivityScreen = () => {
   } = useInfiniteQuery({
     queryKey: ['logActivities', shopId],
     queryFn: ({ pageParam = 1 }) =>
-      fetchLogActivities({ shopId: shopId as number, page: pageParam as number, pageSize: PAGE_SIZE }),
+      fetchLogActivities({ shopId: shopId as number, page: pageParam as number, pageSize: PAGE_SIZE }, navigation),
     initialPageParam: 1,
     getNextPageParam: (lastPage) => {
       if (lastPage.page < lastPage.totalPages) return lastPage.page + 1;

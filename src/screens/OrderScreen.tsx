@@ -22,6 +22,7 @@ import API_URL from '../config/api';
 import { getShopId, getAuthToken, getShiftId, getUserId } from '../services/AuthStore';
 import { setShiftId } from '../services/AuthStore';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { handle403Error } from '../utils/apiErrorHandler';
 
 interface ProductUnit {
   unitName: string;
@@ -247,11 +248,14 @@ export const clearGlobalOrderState = () => {
 };
 
 // Function to fetch all products for preloading
-const fetchAllProducts = async (shopId: number): Promise<AvailableProduct[]> => {
+const fetchAllProducts = async (shopId: number, navigation?: NavigationProp<RootStackParamList>): Promise<AvailableProduct[]> => {
   const token = await getAuthToken();
   const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&Status=1&page=1&pageSize=1000`, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
+  if (navigation && handle403Error(res, navigation)) {
+    return [];
+  }
   const data = await res.json();
   const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
   
@@ -302,7 +306,7 @@ const OrderScreen = () => {
     error: productsError 
   } = useQuery({
     queryKey: ['allProducts', shopId],
-    queryFn: () => fetchAllProducts(shopId!),
+    queryFn: () => fetchAllProducts(shopId!, navigation),
     enabled: shopId !== null && shopId > 0,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
     cacheTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
@@ -443,6 +447,7 @@ const OrderScreen = () => {
             const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&Status=1&Barcode=${encodeURIComponent(barcode)}&page=1&pageSize=1`, {
               headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
+            if (handle403Error(res, navigation)) return;
             const data = await res.json().catch(() => ({}));
             const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
             const p: any = items[0];
@@ -640,6 +645,7 @@ const OrderScreen = () => {
           const res = await fetch(`${API_URL}/api/customers/${customerId}?ShopId=${shopId}`, {
             headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           });
+          if (handle403Error(res, navigation)) return;
           const data = await res.json().catch(() => ({}));
           const c: any = data?.data || data || {};
           const idNum = Number(c?.customerId ?? c?.id ?? customerId);

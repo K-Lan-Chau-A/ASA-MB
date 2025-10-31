@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import API_URL from '../config/api';
+import { handle403Error } from '../utils/apiErrorHandler';
 import { getAuthToken, getShopId } from '../services/AuthStore';
 import { RootStackParamList } from '../types/navigation';
 
@@ -59,6 +60,7 @@ const VoucherScreen = () => {
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify(payload),
       });
+      if (handle403Error(res, navigation)) return;
       const data = await res.json().catch(() => ({}));
       try { console.log('[Voucher/Create] status:', res.status, res.statusText, data); } catch {}
       if (!res.ok) { Alert.alert('Lỗi', data?.message || 'Tạo voucher thất bại'); return; }
@@ -79,6 +81,7 @@ const VoucherScreen = () => {
       const token = await getAuthToken();
       const url = `${API_URL}/api/vouchers?ShopId=${shopId}&page=1&pageSize=100`;
       const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      if (handle403Error(res, navigation)) return;
       const data = await res.json().catch(() => ({}));
       const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
       const mapped = items.map((v: any) => ({

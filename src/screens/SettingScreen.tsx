@@ -12,9 +12,11 @@ import {
   Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
+import { RootStackParamList } from '../types/navigation';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import API_URL from '../config/api';
+import { handle403Error } from '../utils/apiErrorHandler';
 import { getAuthToken, getShopId, getUsername } from '../services/AuthStore';
 import vietQrBankData from '../constants/vietQrBank.json';
 import donViHanhChinhData from '../constants/donViHanhChinh34TinhThanh.json';
@@ -66,7 +68,7 @@ interface Ward {
 }
 
 const SettingScreen = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [shopData, setShopData] = useState<ShopData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -137,7 +139,7 @@ const SettingScreen = () => {
           'Authorization': `Bearer ${token}`,
         },
       });
-
+      if (handle403Error(response, navigation)) return;
       if (!response.ok) {
         throw new Error('Không thể tải thông tin cửa hàng');
       }
@@ -212,7 +214,7 @@ const SettingScreen = () => {
         },
         body: JSON.stringify(updateData),
       });
-
+      if (handle403Error(response, navigation)) return;
       console.log('Response status:', response.status);
       console.log('Response headers:', response.headers);
 

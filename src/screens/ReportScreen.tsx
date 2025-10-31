@@ -1,10 +1,12 @@
 import React, { useCallback, useMemo, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, LayoutAnimation, Platform, UIManager, Alert, PermissionsAndroid, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
+import { RootStackParamList } from '../types/navigation';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import API_URL from '../config/api';
+import { handle403Error } from '../utils/apiErrorHandler';
 import { getAuthToken, getShopId } from '../services/AuthStore';
 
 // Enable layout animations on Android
@@ -72,7 +74,7 @@ const fetchReports = async (params: {
   shopId: number;
   page: number;
   pageSize: number;
-}): Promise<ReportsResponse> => {
+}, navigation?: NavigationProp<RootStackParamList>): Promise<ReportsResponse> => {
   const { shopId, page, pageSize } = params;
   const token = await getAuthToken();
   const url = `${API_URL}/api/reports?ShopId=${encodeURIComponent(shopId)}&page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}`;
@@ -82,6 +84,9 @@ const fetchReports = async (params: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
+  if (navigation && handle403Error(response, navigation)) {
+    throw new Error('403 Forbidden');
+  }
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Failed to fetch reports: ${response.status} ${text}`);
@@ -203,7 +208,7 @@ const ReportItem = ({ item }: { item: Report }) => {
 };
 
 const ReportScreen = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const PAGE_SIZE = 10;
   const [shopId, setShopId] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -309,7 +314,7 @@ const ReportScreen = () => {
   } = useInfiniteQuery({
     queryKey: ['reports', shopId],
     queryFn: ({ pageParam = 1 }) =>
-      fetchReports({ shopId: shopId as number, page: pageParam as number, pageSize: PAGE_SIZE }),
+      fetchReports({ shopId: shopId as number, page: pageParam as number, pageSize: PAGE_SIZE }, navigation),
     initialPageParam: 1,
     getNextPageParam: (lastPage) => {
       if (lastPage.page < lastPage.totalPages) return lastPage.page + 1;

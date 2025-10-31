@@ -13,6 +13,7 @@ import {
   Modal,
 } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
+import { navigateIfAuthorized } from '../utils/navigationGuard';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +21,7 @@ import API_URL from '../config/api';
 import { getShopId, getAuthToken } from '../services/AuthStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useProductsQuery } from '../services/products';
+import { handle403Error } from '../utils/apiErrorHandler';
 
 interface ProductUnit {
   unitName: string;
@@ -251,6 +253,7 @@ const ProductsScreen = () => {
       const res = await fetch(url, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
+      if (handle403Error(res, navigation)) return;
       const data = await res.json();
       const items: any[] = Array.isArray(data?.items) ? data.items : [];
       
@@ -327,6 +330,7 @@ const ProductsScreen = () => {
     if (shopId <= 0) return;
     const url = `${API_URL}/api/products?ShopId=${shopId}&page=${targetPage}&pageSize=${pageSize}`;
     const res = await fetch(url, { headers: auth ? { Authorization: `Bearer ${auth}` } : undefined });
+    if (handle403Error(res, navigation)) return;
     const data = await res.json().catch(() => ({} as any));
     const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
     const totalPages: number = Number(data?.totalPages ?? data?.data?.totalPages ?? 0) || 0;
@@ -393,6 +397,7 @@ const ProductsScreen = () => {
       while (true) {
         const url = `${API_URL}/api/products?ShopId=${shopId}&page=${p}&pageSize=${pageSize}`;
         const res = await fetch(url, { headers: auth ? { Authorization: `Bearer ${auth}` } : undefined });
+        if (handle403Error(res, navigation)) break;
         const data = await res.json().catch(() => ({} as any));
         const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
         const chunk: Product[] = items.map((prodItem: any, idx: number) => ({
@@ -472,7 +477,7 @@ const ProductsScreen = () => {
   }, []);
 
   const handleAddProduct = useCallback(() => {
-    navigation.navigate('AddProduct');
+    navigateIfAuthorized(navigation, 'AddProduct', { buildUrl: (sid) => `${API_URL}/api/categories?ShopId=${sid}&page=1&pageSize=1` });
   }, [navigation]);
 
   const handleScanBarcode = useCallback(() => {
@@ -481,7 +486,7 @@ const ProductsScreen = () => {
 
   const handleEditProduct = useCallback((product: Product) => {
     // Navigate to AddProduct with prefilled product data
-    navigation.navigate('AddProduct', { product: product });
+    navigateIfAuthorized(navigation, 'AddProduct', { buildUrl: (sid) => `${API_URL}/api/categories?ShopId=${sid}&page=1&pageSize=1` }, { product: product });
   }, [navigation]);
 
   const handleToggleActive = useCallback((product: Product) => {
@@ -509,6 +514,7 @@ const ProductsScreen = () => {
                   method: 'DELETE',
                   headers: token ? { Authorization: `Bearer ${token}` } : undefined,
                 });
+                if (handle403Error(res, navigation)) return;
                 if (!res.ok) throw new Error('Deactive failed');
                 setProducts(prev => prev.map(p => p.id === product.id ? { ...p, status: 0 } : p));
                 Alert.alert('Thành công', 'Sản phẩm đã được ngưng bán');
@@ -518,6 +524,7 @@ const ProductsScreen = () => {
                   method: 'PUT',
                   headers: token ? { Authorization: `Bearer ${token}` } : undefined,
                 });
+                if (handle403Error(res, navigation)) return;
                 if (!res.ok) throw new Error('Activate failed');
                 setProducts(prev => prev.map(p => p.id === product.id ? { ...p, status: 1 } : p));
                 Alert.alert('Thành công', 'Sản phẩm đã được kích hoạt');
