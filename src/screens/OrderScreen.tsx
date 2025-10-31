@@ -393,9 +393,19 @@ const OrderScreen = () => {
   }, []);
 
   const addProduct = useCallback((product: Omit<Product, 'quantity'>) => {
-    console.log('📱 Adding product:', product.name);
+    console.log('📱 [ADD PRODUCT] Starting add product:', { 
+      id: product.id, 
+      name: product.name, 
+      price: product.price,
+      selectedUnit: product.selectedUnit,
+      availableQuantity: (product as any).availableQuantity,
+      barcode: product.barcode,
+      timestamp: new Date().toISOString()
+    });
+    
     setProducts(prevProducts => {
       const existingIndex = prevProducts.findIndex(p => p.id === product.id && p.selectedUnit === product.selectedUnit);
+      console.log('📱 [ADD PRODUCT] Existing products in cart:', prevProducts.length, 'Existing index:', existingIndex);
       
       // Stock check across all units: compute committed base units
       const findFactor = (units: any[], unitName: string) => (units.find(u => u.unitName === unitName)?.quantityInBaseUnit ?? 1);
@@ -404,7 +414,16 @@ const OrderScreen = () => {
         .reduce((sum, p) => sum + p.quantity * findFactor(p.units as any, p.selectedUnit), 0);
       const addFactor = findFactor(product.units as any, product.selectedUnit);
       const availableBase = Number((product as any).availableQuantity ?? 0);
+      
+      console.log('📱 [ADD PRODUCT] Stock check:', {
+        committedBase,
+        addFactor,
+        availableBase,
+        wouldExceed: availableBase && committedBase + addFactor > availableBase
+      });
+      
       if (availableBase && committedBase + addFactor > availableBase) {
+        console.log('📱 [ADD PRODUCT] ❌ Insufficient stock');
         Alert.alert('Không đủ hàng', 'Số lượng tồn kho không đủ cho đơn vị đã chọn.');
         return prevProducts;
       }
@@ -415,16 +434,29 @@ const OrderScreen = () => {
         const candidate = updatedProducts[existingIndex];
         const unitFactor = findFactor(candidate.units as any, candidate.selectedUnit);
         if (availableBase && committedBase + unitFactor > availableBase) {
+          console.log('📱 [ADD PRODUCT] ❌ Insufficient stock for existing item');
           Alert.alert('Không đủ hàng', 'Số lượng tồn kho không đủ cho đơn vị đã chọn.');
           return prevProducts;
         }
+        const oldQuantity = candidate.quantity;
         updatedProducts[existingIndex] = { ...candidate, quantity: candidate.quantity + 1 };
-        console.log('📱 Updated quantity for:', product.name, product.selectedUnit);
+        console.log('📱 [ADD PRODUCT] ✅ Updated quantity:', { 
+          name: product.name, 
+          unit: product.selectedUnit,
+          oldQuantity,
+          newQuantity: candidate.quantity + 1,
+          totalInCart: updatedProducts.length
+        });
         return updatedProducts;
       } else {
         // Add new product at the TOP of the list (index 0) for better UX
         const newProducts = [{ ...product, quantity: 1 }, ...prevProducts];
-        console.log('📱 Added new product at top, total products:', newProducts.length);
+        console.log('📱 [ADD PRODUCT] ✅ Added new product at top:', { 
+          name: product.name,
+          unit: product.selectedUnit,
+          price: product.price,
+          totalInCart: newProducts.length
+        });
         return newProducts;
       }
     });
@@ -435,60 +467,103 @@ const OrderScreen = () => {
   useEffect(() => {
     if (route.params?.scannedProduct) {
       const { barcode, type } = route.params.scannedProduct;
-          // Prefer fetching from API by barcode for selling flow
+      console.log('🔍 [BARCODE SCAN] Received scanned product:', { barcode, type, timestamp: new Date().toISOString() });
+      
+      // Prefer fetching from API by barcode for selling flow
       const run = async () => {
         try {
           const shopId = (await getShopId()) ?? 0;
           const token = await getAuthToken();
+          console.log('🔍 [BARCODE SCAN] Starting product lookup:', { barcode, shopId });
+          
           // First try local suggestions list for performance
-          const local = availableProducts.find(p => p.barcode === barcode);
+          const local = allProducts.find(p => p.barcode === barcode);
           let candidate: any | null = local || null;
-          if (!candidate) {
+          
+          if (local) {
+            console.log('🔍 [BARCODE SCAN] Found product in local cache:', { 
+              id: local.id, 
+              name: local.name, 
+              price: local.price,
+              barcode: local.barcode,
+              availableQuantity: local.availableQuantity 
+            });
+          } else {
+            console.log('🔍 [BARCODE SCAN] Product not in local cache, fetching from API...');
             const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&Status=1&Barcode=${encodeURIComponent(barcode)}&page=1&pageSize=1`, {
               headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
-            if (handle403Error(res, navigation)) return;
+            if (handle403Error(res, navigation)) {
+              console.log('🔍 [BARCODE SCAN] 403 Error detected, returning');
+              return;
+            }
             const data = await res.json().catch(() => ({}));
             const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
             const p: any = items[0];
+            
             if (p) {
-                candidate = {
+              console.log('🔍 [BARCODE SCAN] API returned product:', { 
+                id: p.id ?? p.productId, 
+                name: p.productName ?? p.name,
+                price: p.price,
+                promotionPrice: p.promotionPrice,
+                quantity: p.quantity ?? p.availableQuantity,
+                unitName: p.unitName,
+                unitsCount: Array.isArray(p.units) ? p.units.length : 0
+              });
+              
+              candidate = {
                 id: String(p.id ?? p.productId ?? ''),
                 name: String(p.productName ?? p.name ?? 'Sản phẩm'),
                 price: Number(p.price ?? 0),
                 barcode: p.barcode ? String(p.barcode) : undefined,
                 imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
-                  // base unit + units from product response (base first)
-                  units: ([
-                    { unitName: String(p.unitName ?? 'Cái'), price: Number((p.promotionPrice ?? p.price ?? 0)), quantityInBaseUnit: 1, isBaseUnit: true },
-                    ...((Array.isArray(p.units) ? p.units : []).map((u: any) => ({
-                      unitName: String(u.unitName ?? u.name ?? 'Cái'),
-                      price: Number((u.promotionPrice ?? u.price ?? p.promotionPrice ?? p.price ?? 0)),
-                      quantityInBaseUnit: Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1),
-                      isBaseUnit: Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1) === 1,
-                    })).filter((u: any) => u.quantityInBaseUnit !== 1))
-                  ]),
-                  selectedUnit: String(p.unitName ?? 'Cái'),
+                // base unit + units from product response (base first)
+                units: ([
+                  { unitName: String(p.unitName ?? 'Cái'), price: Number((p.promotionPrice ?? p.price ?? 0)), quantityInBaseUnit: 1, isBaseUnit: true },
+                  ...((Array.isArray(p.units) ? p.units : []).map((u: any) => ({
+                    unitName: String(u.unitName ?? u.name ?? 'Cái'),
+                    price: Number((u.promotionPrice ?? u.price ?? p.promotionPrice ?? p.price ?? 0)),
+                    quantityInBaseUnit: Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1),
+                    isBaseUnit: Number(u.conversionFactor ?? u.quantityInBaseUnit ?? 1) === 1,
+                  })).filter((u: any) => u.quantityInBaseUnit !== 1))
+                ]),
+                selectedUnit: String(p.unitName ?? 'Cái'),
                 availableQuantity: Number(p.quantity ?? p.availableQuantity ?? 0),
               } as AvailableProduct;
+            } else {
+              console.log('🔍 [BARCODE SCAN] API returned no products for barcode:', barcode);
             }
           }
+          
           if (candidate) {
-                // Use units from candidate directly (already mapped above or from local list)
-                const mappedUnits: any[] = Array.isArray((candidate as any).units) ? (candidate as any).units : [];
-                const sorted = mappedUnits.slice().sort((a: any, b: any) => (a.quantityInBaseUnit || 1) - (b.quantityInBaseUnit || 1));
-                const base = sorted.find((u: any) => u.isBaseUnit || Number(u.quantityInBaseUnit ?? 1) === 1) || sorted[0] || { unitName: 'Cái', price: candidate.price, quantityInBaseUnit: 1, isBaseUnit: true };
-                candidate = { ...candidate, units: sorted.length ? sorted : [base], price: base.price, selectedUnit: base.unitName };
+            // Use units from candidate directly (already mapped above or from local list)
+            const mappedUnits: any[] = Array.isArray((candidate as any).units) ? (candidate as any).units : [];
+            const sorted = mappedUnits.slice().sort((a: any, b: any) => (a.quantityInBaseUnit || 1) - (b.quantityInBaseUnit || 1));
+            const base = sorted.find((u: any) => u.isBaseUnit || Number(u.quantityInBaseUnit ?? 1) === 1) || sorted[0] || { unitName: 'Cái', price: candidate.price, quantityInBaseUnit: 1, isBaseUnit: true };
+            candidate = { ...candidate, units: sorted.length ? sorted : [base], price: base.price, selectedUnit: base.unitName };
+
+            console.log('🔍 [BARCODE SCAN] Prepared product to add:', {
+              id: candidate.id,
+              name: candidate.name,
+              price: candidate.price,
+              selectedUnit: candidate.selectedUnit,
+              availableQuantity: candidate.availableQuantity,
+              unitsCount: candidate.units?.length ?? 0,
+              units: candidate.units?.map((u: any) => ({ unitName: u.unitName, price: u.price, quantityInBaseUnit: u.quantityInBaseUnit }))
+            });
 
             const productToAdd = candidate as Product;
+            console.log('🔍 [BARCODE SCAN] Calling addProduct...');
             addProduct(productToAdd);
+            console.log('🔍 [BARCODE SCAN] addProduct called successfully');
           } else {
             // Fallback: show not found alert and ask user to enter product manually
-            console.log('📱 Product not found by barcode:', barcode);
+            console.log('🔍 [BARCODE SCAN] ❌ Product not found by barcode:', barcode);
             Alert.alert('Không tìm thấy', `Không tìm thấy sản phẩm với mã vạch ${barcode}.\nHãy nhập sản phẩm trong mục Hàng hóa.`);
           }
         } catch (e) {
-          console.log('📱 Scan handling error', e);
+          console.error('🔍 [BARCODE SCAN] ❌ Scan handling error:', e);
           Alert.alert('Lỗi', 'Không thể tìm sản phẩm theo mã vạch. Hãy thử lại hoặc nhập sản phẩm.');
         }
       };
@@ -497,7 +572,7 @@ const OrderScreen = () => {
       // Clear the scannedProduct and scanTimestamp params to prevent re-processing
       navigation.setParams({ scannedProduct: undefined, scanTimestamp: undefined });
     }
-  }, [route.params?.scannedProduct, addProduct, navigation]);
+  }, [route.params?.scannedProduct, addProduct, navigation, allProducts]);
 
   // Handle new product from AddProductScreen
   useEffect(() => {
@@ -571,6 +646,7 @@ const OrderScreen = () => {
   const totalAmount = useMemo(() => getTotalAmount(), [getTotalAmount]);
 
   const handleScanBarcode = useCallback(() => {
+    console.log('🔍 [BARCODE SCAN] User tapped scan barcode button, navigating to Scanner');
     navigation.navigate('Scanner', { returnScreen: 'Order' });
   }, [navigation]);
 

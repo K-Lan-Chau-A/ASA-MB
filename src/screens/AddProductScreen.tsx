@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset, ImageLibraryOptions, CameraOptions, launchImageLibrary, launchCamera } from 'react-native-image-picker';
-import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, NavigationProp, RouteProp, CommonActions } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RootStackParamList } from '../types/navigation';
@@ -800,7 +800,13 @@ const [showAdditionalUnits, setShowAdditionalUnits] = useState(false);
                 // Invalidate OrderScreen's product cache to include new product
                 queryClient.invalidateQueries({ queryKey: ['allProducts'] });
               } catch {}
-              navigation.goBack();
+              // Navigate to MainApp (home screen) instead of goBack to avoid returning to ScannerScreen
+              navigation.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'MainApp' }],
+                })
+              );
             },
           },
         ]

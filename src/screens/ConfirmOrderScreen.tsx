@@ -1051,21 +1051,20 @@ const ConfirmOrderScreen = () => {
           <TouchableOpacity
             style={[
               styles.paymentMethodItem,
-              selectedPaymentMethod === 'nfc_card' && styles.paymentMethodItemSelected
+              selectedPaymentMethod === 'nfc_card' && styles.paymentMethodItemSelected,
+              styles.paymentMethodItemDisabled
             ]}
-            onPress={() => setSelectedPaymentMethod('nfc_card')}
+            onPress={() => {/* Disabled */}}
+            disabled={true}
           >
             <View style={styles.paymentMethodLeft}>
-              <Icon name="credit-card" size={24} color="#009DA5" />
-              <Text style={styles.paymentMethodText}>Thẻ thành viên NFC</Text>
+              <Icon name="credit-card" size={24} color="#999" />
+              <Text style={[styles.paymentMethodText, styles.paymentMethodTextDisabled]}>Thẻ thành viên NFC</Text>
             </View>
             <View style={[
               styles.radioButton,
-              selectedPaymentMethod === 'nfc_card' && styles.radioButtonSelected
+              styles.radioButtonDisabled
             ]}>
-              {selectedPaymentMethod === 'nfc_card' && (
-                <Icon name="check" size={16} color="#FFFFFF" />
-              )}
             </View>
           </TouchableOpacity>
         </View>
@@ -1202,7 +1201,11 @@ const ConfirmOrderScreen = () => {
               </TouchableOpacity>
             </View>
             
-            <View style={styles.cashModalContent}>
+            <ScrollView 
+              style={styles.cashModalScrollView}
+              contentContainerStyle={styles.cashModalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
               {/* Total Amount */}
               <View style={styles.totalAmountSection}>
                 <Text style={styles.totalAmountLabel}>Tổng thanh toán:</Text>
@@ -1221,6 +1224,14 @@ const ConfirmOrderScreen = () => {
                   autoFocus={true}
                 />
               </View>
+              
+              {/* Change Amount */}
+              {changeAmount > 0 && (
+                <View style={styles.changeSection}>
+                  <Text style={styles.changeLabel}>Tiền thối lại:</Text>
+                  <Text style={styles.changeValue}>{changeAmount.toLocaleString('vi-VN')}đ</Text>
+                </View>
+              )}
               
               {/* Denomination Buttons */}
               <View style={styles.denominationSection}>
@@ -1241,19 +1252,10 @@ const ConfirmOrderScreen = () => {
                     ))}
                 </View>
               </View>
-              
-              {/* Change Amount */}
-              {changeAmount > 0 && (
-                <View style={styles.changeSection}>
-                  <Text style={styles.changeLabel}>Tiền thối lại:</Text>
-                  <Text style={styles.changeValue}>{changeAmount.toLocaleString('vi-VN')}đ</Text>
-                </View>
-              )}
-            </View>
+            </ScrollView>
             
             {/* Action Buttons */}
             <View style={styles.cashModalButtons}>
-             
               <TouchableOpacity 
                 style={[
                   styles.modalConfirmButton, 
@@ -1663,6 +1665,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#009DA5',
     borderColor: '#009DA5',
   },
+  paymentMethodItemDisabled: {
+    opacity: 0.5,
+    backgroundColor: '#F5F5F5',
+  },
+  paymentMethodTextDisabled: {
+    color: '#999',
+  },
+  radioButtonDisabled: {
+    borderColor: '#CCCCCC',
+    backgroundColor: '#F5F5F5',
+  },
   footer: {
     backgroundColor: '#FFFFFF',
     padding: 16,
@@ -2063,8 +2076,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     width: '100%',
-    maxHeight: '80%',
+    maxHeight: '85%',
     padding: 20,
+    justifyContent: 'flex-start',
+  },
+  cashModalScrollView: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  cashModalScrollContent: {
+    paddingBottom: 8,
   },
   cashModalContent: {
     marginBottom: 20,
@@ -2141,6 +2162,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#4CAF50',
+    marginBottom: 20,
   },
   changeLabel: {
     fontSize: 16,
@@ -2156,6 +2178,10 @@ const styles = StyleSheet.create({
   cashModalButtons: {
     flexDirection: 'row',
     gap: 12,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5E5',
   },
   modalConfirmButton: {
     flex: 1,

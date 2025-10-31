@@ -181,6 +181,14 @@ const MoreScreen = () => {
     },
     { 
       id: 13, 
+      title: 'Cài đặt máy in', 
+      icon: 'printer', 
+      iconColor: '#009DA5', 
+      bgColor: '#FFFFFF',
+      onPress: () => navigation.navigate('PrinterScreen') 
+    },
+    { 
+      id: 14, 
       title: 'Cài đặt', 
       icon: 'cog', 
       iconColor: '#009DA5', 
@@ -188,7 +196,7 @@ const MoreScreen = () => {
       onPress: () => navigateIfAuthorized(navigation, 'SettingScreen', { buildUrl: (sid) => `${API_URL}/api/shops?ShopId=${sid}&page=1&pageSize=1` }) 
     },
     { 
-      id: 14, 
+      id: 15, 
       title: 'Đăng xuất', 
       icon: 'logout', 
       iconColor: '#009DA5', 

@@ -18,9 +18,19 @@ const VoucherScreen = () => {
   const [code, setCode] = useState('');
   const [value, setValue] = useState('');
   const [type, setType] = useState<1 | 2>(1); // 1 money, 2 percent
-  const [expireDate, setExpireDate] = useState(''); // YYYY-MM-DD
+  const [expireDate, setExpireDate] = useState(''); // DD-MM-YYYY for UX
   const [expireTime, setExpireTime] = useState(''); // HH:mm
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Convert DD-MM-YYYY to YYYY-MM-DD
+  const convertDateToApiFormat = useCallback((ddmmyyyy: string): string => {
+    const parts = ddmmyyyy.trim().split('-');
+    if (parts.length === 3) {
+      const [dd, mm, yyyy] = parts;
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    return ddmmyyyy;
+  }, []);
 
   const validate = useCallback(() => {
     if (!code.trim()) { Alert.alert('Lỗi', 'Vui lòng nhập mã voucher'); return false; }
@@ -28,7 +38,7 @@ const VoucherScreen = () => {
     const num = parseFloat(value.replace(/[^\d.]/g, ''));
     if (isNaN(num) || num <= 0) { Alert.alert('Lỗi', 'Giá trị phải là số dương'); return false; }
     if (type === 2 && (num < 1 || num > 100)) { Alert.alert('Lỗi', 'Phần trăm phải từ 1 đến 100'); return false; }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(expireDate.trim())) { Alert.alert('Lỗi', 'Ngày hết hạn phải theo định dạng YYYY-MM-DD'); return false; }
+    if (!/^\d{2}-\d{2}-\d{4}$/.test(expireDate.trim())) { Alert.alert('Lỗi', 'Ngày hết hạn phải theo định dạng DD-MM-YYYY'); return false; }
     if (expireTime && !/^\d{2}:\d{2}$/.test(expireTime.trim())) { Alert.alert('Lỗi', 'Giờ hết hạn phải theo định dạng HH:mm'); return false; }
     return true;
   }, [code, value, type, expireDate, expireTime]);
@@ -41,8 +51,10 @@ const VoucherScreen = () => {
       const token = await getAuthToken();
       const expiredIso = (() => {
         try {
+          // Convert DD-MM-YYYY to YYYY-MM-DD for API
+          const apiDate = convertDateToApiFormat(expireDate);
           const time = (expireTime || '23:59').padStart(5, '0');
-          const d = new Date(`${expireDate}T${time}:00`);
+          const d = new Date(`${apiDate}T${time}:00`);
           return d.toISOString();
         } catch { return new Date().toISOString(); }
       })();
@@ -72,7 +84,7 @@ const VoucherScreen = () => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [validate, value, type, expireDate, expireTime, code]);
+  }, [validate, value, type, expireDate, expireTime, code, convertDateToApiFormat]);
 
   const loadVouchers = useCallback(async () => {
     try {
@@ -218,31 +230,60 @@ const VoucherScreen = () => {
                   <Text style={styles.label}>Thời hạn hết hạn <Text style={styles.required}>*</Text></Text>
                   <View style={styles.row}>
                     <View style={styles.half}>
-                      <TextInput style={styles.input} value={expireDate} onChangeText={setExpireDate} placeholder="YYYY-MM-DD" />
+                      <TextInput 
+                        style={styles.input} 
+                        value={expireDate} 
+                        onChangeText={setExpireDate} 
+                        placeholder="DD-MM-YYYY" 
+                      />
                     </View>
                     <View style={styles.half}>
-                      <TextInput style={styles.input} value={expireTime} onChangeText={setExpireTime} placeholder="HH:mm (tuỳ chọn)" />
+                      <TextInput 
+                        style={styles.input} 
+                        value={expireTime} 
+                        onChangeText={(text) => {
+                          // Remove all non-digits
+                          const digits = text.replace(/[^\d]/g, '');
+                          // Auto-add colon after 2 digits
+                          if (digits.length <= 2) {
+                            setExpireTime(digits);
+                          } else if (digits.length <= 4) {
+                            setExpireTime(`${digits.slice(0, 2)}:${digits.slice(2)}`);
+                          } else {
+                            setExpireTime(`${digits.slice(0, 2)}:${digits.slice(2, 4)}`);
+                          }
+                        }}
+                        placeholder="HH:mm (tuỳ chọn)" 
+                        maxLength={5}
+                        keyboardType="numeric"
+                      />
                     </View>
                   </View>
                   <View style={styles.quickRow}>
                     <TouchableOpacity style={styles.quickChip} onPress={() => {
                       const d = new Date(); d.setDate(d.getDate() + 7);
-                      const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const day = String(d.getDate()).padStart(2,'0');
-                      setExpireDate(`${y}-${m}-${day}`); setExpireTime('23:59');
+                      const day = String(d.getDate()).padStart(2,'0');
+                      const m = String(d.getMonth()+1).padStart(2,'0');
+                      const y = d.getFullYear();
+                      setExpireDate(`${day}-${m}-${y}`); setExpireTime('23:59');
                     }}>
                       <Text style={styles.quickText}>+7 ngày</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.quickChip} onPress={() => {
                       const d = new Date(); d.setMonth(d.getMonth() + 1);
-                      const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const day = String(d.getDate()).padStart(2,'0');
-                      setExpireDate(`${y}-${m}-${day}`); setExpireTime('23:59');
+                      const day = String(d.getDate()).padStart(2,'0');
+                      const m = String(d.getMonth()+1).padStart(2,'0');
+                      const y = d.getFullYear();
+                      setExpireDate(`${day}-${m}-${y}`); setExpireTime('23:59');
                     }}>
                       <Text style={styles.quickText}>+1 tháng</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.quickChip} onPress={() => {
                       const d = new Date(); d.setMonth(d.getMonth() + 3);
-                      const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const day = String(d.getDate()).padStart(2,'0');
-                      setExpireDate(`${y}-${m}-${day}`); setExpireTime('23:59');
+                      const day = String(d.getDate()).padStart(2,'0');
+                      const m = String(d.getMonth()+1).padStart(2,'0');
+                      const y = d.getFullYear();
+                      setExpireDate(`${day}-${m}-${y}`); setExpireTime('23:59');
                     }}>
                       <Text style={styles.quickText}>+3 tháng</Text>
                     </TouchableOpacity>

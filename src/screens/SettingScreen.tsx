@@ -17,7 +17,7 @@ import { RootStackParamList } from '../types/navigation';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import API_URL from '../config/api';
 import { handle403Error } from '../utils/apiErrorHandler';
-import { getAuthToken, getShopId, getUsername } from '../services/AuthStore';
+import { getAuthToken, getShopId, getUsername, getUserId } from '../services/AuthStore';
 import vietQrBankData from '../constants/vietQrBank.json';
 import donViHanhChinhData from '../constants/donViHanhChinh34TinhThanh.json';
 
@@ -86,6 +86,13 @@ const SettingScreen = () => {
   const [showProvinceModal, setShowProvinceModal] = useState(false);
   const [showWardModal, setShowWardModal] = useState(false);
   const [showBankModal, setShowBankModal] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  
+  // Change password states
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
   
   // Data
   const banks: Bank[] = vietQrBankData.data;
@@ -268,6 +275,83 @@ const SettingScreen = () => {
     
     setIsEditing(true);
   }, [shopData, banks, parseAddress]);
+
+  // Handle change password
+  const handleChangePassword = useCallback(async () => {
+    // Validate inputs
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      Alert.alert('Lỗi', 'Vui lòng điền đầy đủ thông tin');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Lỗi', 'Mật khẩu mới và xác nhận mật khẩu không khớp');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      Alert.alert('Lỗi', 'Mật khẩu mới phải có ít nhất 6 ký tự');
+      return;
+    }
+
+    try {
+      setIsChangingPassword(true);
+      const token = await getAuthToken();
+      const userId = await getUserId();
+
+      if (!token || !userId) {
+        Alert.alert('Lỗi', 'Không thể lấy thông tin đăng nhập');
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/api/authentication/change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          userId: userId,
+          oldPassword: oldPassword,
+          newPassword: newPassword,
+          confirmPassword: confirmPassword,
+        }),
+      });
+
+      if (handle403Error(response, navigation)) return;
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = 'Không thể đổi mật khẩu';
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.message || errorJson.error || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        Alert.alert('Lỗi', errorMessage);
+        return;
+      }
+
+      // Success
+      Alert.alert('Thành công', 'Đã đổi mật khẩu thành công!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            setShowChangePasswordModal(false);
+            setOldPassword('');
+            setNewPassword('');
+            setConfirmPassword('');
+          },
+        },
+      ]);
+    } catch (error) {
+      console.error('Error changing password:', error);
+      Alert.alert('Lỗi', `Đã xảy ra lỗi khi đổi mật khẩu: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsChangingPassword(false);
+    }
+  }, [oldPassword, newPassword, confirmPassword, navigation]);
 
 
   useEffect(() => {
@@ -485,6 +569,19 @@ const SettingScreen = () => {
               </Text>
             </View>
           </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Bảo mật</Text>
+            
+            <TouchableOpacity
+              style={styles.changePasswordButton}
+              onPress={() => setShowChangePasswordModal(true)}
+            >
+              <Icon name="lock-reset" size={20} color="#009DA5" />
+              <Text style={styles.changePasswordButtonText}>Đổi mật khẩu</Text>
+              <Icon name="chevron-right" size={20} color="#999" />
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
 
@@ -546,6 +643,76 @@ const SettingScreen = () => {
             />
           </View>
       </View>
+      </Modal>
+
+      {/* Change Password Modal */}
+      <Modal visible={showChangePasswordModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Đổi mật khẩu</Text>
+              <TouchableOpacity 
+                onPress={() => {
+                  setShowChangePasswordModal(false);
+                  setOldPassword('');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                }}
+              >
+                <Icon name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalScrollView} showsVerticalScrollIndicator={false}>
+              <View style={styles.modalScrollContent}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.subLabel}>Mật khẩu hiện tại</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={oldPassword}
+                    onChangeText={setOldPassword}
+                    placeholder="Nhập mật khẩu hiện tại"
+                    secureTextEntry
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.subLabel}>Mật khẩu mới</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    placeholder="Nhập mật khẩu mới (tối thiểu 6 ký tự)"
+                    secureTextEntry
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.subLabel}>Xác nhận mật khẩu mới</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    placeholder="Nhập lại mật khẩu mới"
+                    secureTextEntry
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.saveButton, isChangingPassword && styles.saveButtonDisabled]}
+                  onPress={handleChangePassword}
+                  disabled={isChangingPassword}
+                >
+                  <Text style={styles.saveButtonText}>
+                    {isChangingPassword ? 'Đang xử lý...' : 'Đổi mật khẩu'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -741,6 +908,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     lineHeight: 22,
+  },
+  changePasswordButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: '#FAFAFA',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  changePasswordButtonText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+    marginLeft: 12,
+    fontWeight: '500',
+  },
+  modalScrollView: {
+    maxHeight: 500,
+  },
+  modalScrollContent: {
+    padding: 16,
+  },
+  saveButton: {
+    backgroundColor: '#009DA5',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

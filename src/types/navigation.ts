@@ -15,6 +15,7 @@ export type RootStackParamList = {
   RankScreen: undefined;
   ReportScreen: undefined;
   SettingScreen: undefined;
+  PrinterScreen: undefined;
   OrderDetail: { orderId: number };
   Customer: undefined;
   Order: { 

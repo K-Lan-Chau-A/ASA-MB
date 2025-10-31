@@ -12,7 +12,7 @@ import {
   Image,
   Modal,
 } from 'react-native';
-import { useNavigation, NavigationProp } from '@react-navigation/native';
+import { useNavigation, NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { navigateIfAuthorized } from '../utils/navigationGuard';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
@@ -442,6 +442,26 @@ const ProductsScreen = () => {
     // Fast first page
     loadProducts(true, false);
   }, [loadProducts]);
+
+  // Handle scanned barcode from Scanner screen
+  useFocusEffect(
+    useCallback(() => {
+      // Check for scanned barcode from global state
+      const globalBarcode = (global as any).__scannedBarcodeForProducts;
+      if (globalBarcode) {
+        console.log('📱 [ProductsScreen] Found scanned barcode in global state:', globalBarcode);
+        setSearchText(globalBarcode);
+        // Clear global state
+        (global as any).__scannedBarcodeForProducts = undefined;
+        // Focus search input after a short delay to ensure screen is rendered
+        setTimeout(() => {
+          if (searchInputRef.current) {
+            searchInputRef.current.focus();
+          }
+        }, 300);
+      }
+    }, [])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

@@ -8,11 +8,12 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, NavigationProp, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, NavigationProp, RouteProp, CommonActions } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../types/navigation';
 import { clearGlobalOrderState } from './OrderScreen';
 import { getShopInfo } from '../services/AuthStore';
+import { getPrinterIp, generateReceiptData, printReceipt } from '../utils/printerUtils';
 
 interface Product {
   id: string;
@@ -92,30 +93,75 @@ const InvoicePreviewScreen = () => {
     return 'số quá lớn';
   };
 
-  const handlePrint = () => {
-    Alert.alert(
-      'In hóa đơn',
-      `Bạn muốn in ${copyCount} bản hóa đơn?`,
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'In',
-          onPress: () => {
-            Alert.alert('Thành công', 'Đã gửi lệnh in hóa đơn!', [
-              {
-                text: 'OK',
-                onPress: () => {
-                  // Clear global order state before navigating to MainApp
-                  clearGlobalOrderState();
-                  // Navigate to home screen after printing
-                  navigation.navigate('MainApp');
-                }
+  const handlePrint = async () => {
+    // Get printer IP
+    const printerIp = await getPrinterIp();
+    
+    if (!printerIp) {
+      Alert.alert(
+        'Chưa cấu hình máy in',
+        'Vui lòng cấu hình địa chỉ IP máy in trong Cài đặt máy in trước khi in.',
+        [
+          { text: 'OK' }
+        ]
+      );
+      return;
+    }
+    
+    try {
+      // Prepare invoice data with shop and customer info
+      const invoicePayload = {
+        ...invoiceData,
+        shopName,
+        shopAddress,
+        customerName,
+        customerPhone,
+        customerEmail,
+      };
+      
+      // Generate ESC/POS receipt data
+      const receiptData = generateReceiptData(invoicePayload, copyCount);
+      
+      // Print receipt
+      const result = await printReceipt(receiptData, printerIp);
+      
+      if (result.success) {
+        // Clear global order state before navigating to MainApp
+        clearGlobalOrderState();
+        // Show success alert with button to go home
+        Alert.alert(
+          'In thành công',
+          `Đã gửi lệnh in ${copyCount} bản hóa đơn!`,
+          [
+            {
+              text: 'Về trang chủ',
+              onPress: () => {
+                // Reset navigation stack and navigate to MainApp (which defaults to TrangChu/HomeScreen tab)
+                navigation.dispatch(
+                  CommonActions.reset({
+                    index: 0,
+                    routes: [{ name: 'MainApp' }],
+                  })
+                );
               }
-            ]);
-          }
-        },
-      ]
-    );
+            }
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Lỗi in hóa đơn',
+          result.error || 'Không thể in hóa đơn. Vui lòng kiểm tra kết nối máy in.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error: any) {
+      console.error('Print error:', error);
+      Alert.alert(
+        'Lỗi',
+        error?.message || 'Đã xảy ra lỗi khi in hóa đơn. Vui lòng thử lại.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   const handleShare = () => {
@@ -171,7 +217,9 @@ const InvoicePreviewScreen = () => {
           <View style={styles.invoiceHeader}>
             <Text style={styles.invoiceTitle}>HÓA ĐƠN BÁN HÀNG</Text>
             <Text style={styles.invoiceNumber}>SỐ HĐ: {invoiceData.invoiceNumber}</Text>
-            <Text style={styles.invoiceDate}>Ngày {invoiceData.date}</Text>
+            <Text style={styles.invoiceDate}>
+              {invoiceData.time ? `${invoiceData.time} - ` : ''}ngày {invoiceData.date}
+            </Text>
           </View>
 
           {/* Customer Information */}
@@ -179,6 +227,11 @@ const InvoicePreviewScreen = () => {
             <Text style={styles.customerLabel}>Khách hàng: {customerName}</Text>
             <Text style={styles.customerField}>SDT: {customerPhone}</Text>
             <Text style={styles.customerField}>Email: {customerEmail}</Text>
+          </View>
+
+          {/* Payment Method */}
+          <View style={styles.paymentMethodInfo}>
+            <Text style={styles.paymentMethodLabel}>Phương thức thanh toán: {invoiceData.paymentMethod}</Text>
           </View>
 
           {/* Divider */}
@@ -377,6 +430,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#000',
     marginBottom: 2,
+  },
+  paymentMethodInfo: {
+    marginBottom: 16,
+  },
+  paymentMethodLabel: {
+    fontSize: 14,
+    color: '#000',
+    fontWeight: '500',
   },
   divider: {
     height: 1,

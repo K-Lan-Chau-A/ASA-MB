@@ -125,8 +125,10 @@ const ScannerScreen = () => {
       console.log('📱 Returning to AddProduct with barcode:', code);
       navigateIfAuthorized(navigation, 'AddProduct', { buildUrl: (sid) => `${API_URL}/api/categories?ShopId=${sid}&page=1&pageSize=1` }, { barcode: code });
     } else if (returnScreen === 'Products') {
-      // Go back to Products screen - just navigate back
-      console.log('📱 Returning to Products screen');
+      // Navigate back to Products screen with barcode
+      console.log('📱 Returning to Products screen with barcode:', code);
+      // Store barcode in global state for ProductsScreen to pick up
+      (global as any).__scannedBarcodeForProducts = code;
       navigation.goBack();
     } else {
       // Default: Go back to OrderScreen với mã đã quét (includes Order and undefined cases)

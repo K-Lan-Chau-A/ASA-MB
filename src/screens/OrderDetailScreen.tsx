@@ -193,7 +193,7 @@ const OrderDetailScreen = () => {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Icon name="arrow-left" size={22} color="#000" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Chi tiết hóa đơn {header.code}</Text>
+        <Text style={styles.headerTitle}>Chi tiết hóa đơn {String(header.code || '')}</Text>
         <View style={{ width: 22 }} />
       </View>
 
@@ -205,20 +205,20 @@ const OrderDetailScreen = () => {
         <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
           <View style={styles.detailRow}>
             <Icon name="account" size={18} color="#666" />
-            <Text style={styles.detailText}>Khách: {header.buyer}</Text>
+            <Text style={styles.detailText}>Khách: {String(header.buyer || 'Khách lẻ')}</Text>
           </View>
           <View style={styles.detailRow}>
             <Icon name="clock-outline" size={18} color="#666" />
-            <Text style={styles.detailText}>{header.time}</Text>
+            <Text style={styles.detailText}>{String(header.time || '')}</Text>
           </View>
           <View style={styles.detailRow}>
             <Icon name="credit-card" size={18} color="#666" />
-            <Text style={styles.detailText}>PTTT: {header.methodText}</Text>
+            <Text style={styles.detailText}>PTTT: {String(header.methodText || '')}</Text>
           </View>
           {!!header.voucherId && (
             <View style={styles.detailRow}>
               <Icon name="ticket-percent" size={18} color="#666" />
-              <Text style={styles.detailText}>Voucher: {voucherCode || `#${header.voucherId}`}</Text>
+              <Text style={styles.detailText}>Voucher: {voucherCode ? String(voucherCode) : `#${header.voucherId}`}</Text>
             </View>
           )}
           {typeof header.discount === 'number' && header.discount > 0 && (
@@ -230,7 +230,7 @@ const OrderDetailScreen = () => {
           {!!header.note && (
             <View style={styles.detailRow}>
               <Icon name="note-text" size={18} color="#666" />
-              <Text style={styles.detailText}>Ghi chú: {header.note}</Text>
+              <Text style={styles.detailText}>Ghi chú: {String(header.note)}</Text>
             </View>
           )}
 
@@ -250,33 +250,41 @@ const OrderDetailScreen = () => {
               <ActivityIndicator size="small" color="#009DA5" />
             </View>
           ) : (
-            lines.map((p, idx) => (
-              <View key={idx} style={styles.productRow}>
-                <View style={{ flex: 2 }}>
-                  <Text style={styles.productName}>{p.name || ''}</Text>
-                  <Text style={styles.productMeta}>{p.price.toLocaleString('vi-VN')}₫/{p.unit || 'cái'}</Text>
-                  {p.discountAmount && p.discountAmount > 0 && (
-                    <Text style={styles.priceDetail}>
-                      Giảm: {p.discountAmount.toLocaleString('vi-VN')}₫
-                    </Text>
-                  )}
+            (Array.isArray(lines) ? lines.filter(Boolean) : []).map((p, idx) => {
+              const safePrice = Number(p?.price) || 0;
+              const safeQty = Number(p?.qty) || 0;
+              const safeDiscountAmount = Number(p?.discountAmount) || 0;
+              const safeFinalPrice = Number(p?.finalPrice) || 0;
+              const productName = String(p?.name || '');
+              const productUnit = String(p?.unit || 'cái');
+              return (
+                <View key={`product-${idx}`} style={styles.productRow}>
+                  <View style={{ flex: 2 }}>
+                    <Text style={styles.productName}>{productName}</Text>
+                    <Text style={styles.productMeta}>{safePrice.toLocaleString('vi-VN')}₫/{productUnit}</Text>
+                    {safeDiscountAmount > 0 && (
+                      <Text style={styles.priceDetail}>
+                        Giảm: {safeDiscountAmount.toLocaleString('vi-VN')}₫
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.quantityText}>{safeQty}</Text>
+                  <Text style={styles.productAmount}>
+                    {safeFinalPrice > 0 
+                      ? `${safeFinalPrice.toLocaleString('vi-VN')}₫`
+                      : `${(safeQty * safePrice).toLocaleString('vi-VN')}₫`
+                    }
+                  </Text>
                 </View>
-                <Text style={styles.quantityText}>{p.qty || 0}</Text>
-                <Text style={styles.productAmount}>
-                  {p.finalPrice && p.finalPrice > 0 
-                    ? `${p.finalPrice.toLocaleString('vi-VN')}₫`
-                    : `${(p.qty * p.price).toLocaleString('vi-VN')}₫`
-                  }
-                </Text>
-              </View>
-            ))
+              );
+            })
           )}
 
           <View style={styles.sectionDivider} />
 
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Tổng thanh toán</Text>
-            <Text style={styles.totalValue}>{header.total.toLocaleString('vi-VN')}₫</Text>
+            <Text style={styles.totalValue}>{(Number(header.total) || 0).toLocaleString('vi-VN')}₫</Text>
           </View>
         </ScrollView>
       )}

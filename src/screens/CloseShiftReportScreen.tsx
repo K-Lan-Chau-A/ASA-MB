@@ -157,7 +157,9 @@ const CloseShiftReportScreen = () => {
                   <Text style={styles.sectionTitle}>Nhóm món</Text>
                   {report.productGroups!.map((p, idx) => (
                     <View key={`${p.productName}-${idx}`} style={styles.rowBetween}>
-                      <Text style={styles.label}>{p.productName} (SL: {p.quantity})</Text>
+                      <Text style={styles.label} numberOfLines={1} ellipsizeMode="tail">
+                        {p.productName} (SL: {p.quantity})
+                      </Text>
                       <Text style={styles.value}>{formatCurrency(p.revenue)}</Text>
                     </View>
                   ))}
@@ -183,9 +185,9 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: '#E5E5E5', marginVertical: 12 },
   section: { marginTop: 4 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: '#000', marginBottom: 8 },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
-  label: { fontSize: 14, color: '#000' },
-  value: { fontSize: 14, color: '#000' },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4, minHeight: 24 },
+  label: { fontSize: 14, color: '#000', flex: 1, marginRight: 8 },
+  value: { fontSize: 14, color: '#000', flexShrink: 0 },
   totalLabel: { fontSize: 14, fontWeight: '700', color: '#000' },
   totalValue: { fontSize: 16, fontWeight: '700', color: '#009DA5' },
 });
