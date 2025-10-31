@@ -59,6 +59,7 @@ export type RootStackParamList = {
       discount: number;
     };
   };
+  CloseShiftReportScreen: { shiftId: number } | undefined;
 };
 
 export type TabParamList = {

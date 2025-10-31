@@ -384,32 +384,52 @@ const BillsScreen = () => {
               </TouchableOpacity>
             )}
           </View>
+          
           <TouchableOpacity
-            style={styles.sortButton}
-            onPress={() => setSortOrder(prev => (prev === 'desc' ? 'asc' : 'desc'))}
-            accessibilityLabel="Sắp xếp theo thời gian"
+            style={styles.viewReportBtnInline}
+            onPress={() => {
+              if (!selectedShiftId) {
+                Alert.alert('Thông báo', 'Vui lòng chọn ca để xem báo cáo');
+                return;
+              }
+              // @ts-ignore - navigation typing generic
+              navigation.navigate('CloseShiftReportScreen', { shiftId: selectedShiftId });
+            }}
           >
-            <Icon name="filter-variant" size={22} color="#009DA5" />
+            <Icon name="file-document-outline" size={16} color="#009DA5" />
+            <Text style={styles.viewReportText}>Xem báo cáo chốt ca</Text>
           </TouchableOpacity>
         </View>
 
         {/* Filters */}
         <View style={styles.filterRow}>
-          {([
-            { key: 'all', label: 'Tất cả' },
-            { key: 'success', label: 'Thành công' },
-            { key: 'cancel', label: 'Hủy' },
-          ] as const).map(f => (
+          <View style={styles.filterChipsWrap}>
+            {([
+              { key: 'all', label: 'Tất cả' },
+              { key: 'success', label: 'Thành công' },
+              { key: 'cancel', label: 'Hủy' },
+            ] as const).map(f => (
+              <TouchableOpacity
+                key={f.key}
+                style={[styles.filterChip, statusFilter === f.key && styles.filterChipActive]}
+                onPress={() => setStatusFilter(f.key)}
+              >
+                <Text style={[styles.filterChipText, statusFilter === f.key && styles.filterChipTextActive]}>
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={styles.filterActions}>
+
             <TouchableOpacity
-              key={f.key}
-              style={[styles.filterChip, statusFilter === f.key && styles.filterChipActive]}
-              onPress={() => setStatusFilter(f.key)}
+              style={styles.sortButton}
+              onPress={() => setSortOrder(prev => (prev === 'desc' ? 'asc' : 'desc'))}
+              accessibilityLabel="Sắp xếp theo thời gian"
             >
-              <Text style={[styles.filterChipText, statusFilter === f.key && styles.filterChipTextActive]}>
-                {f.label}
-              </Text>
+              <Icon name="filter-variant" size={22} color="#009DA5" />
             </TouchableOpacity>
-          ))}
+          </View>
         </View>
 
         <View style={styles.shiftContainer}>
@@ -519,10 +539,35 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E5E5',
   },
+  viewReportBtnInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 45,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#009DA5',
+    backgroundColor: '#F0F9FA',
+  },
   filterRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 8,
     marginBottom: 1,
+  },
+  filterChipsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    flexWrap: 'wrap',
+  },
+  filterActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   filterChip: {
     paddingHorizontal: 12,
@@ -596,6 +641,11 @@ const styles = StyleSheet.create({
   picker: {
     height: 50,
     width: '100%',
+  },
+  viewReportText: {
+    color: '#009DA5',
+    fontWeight: '700',
+    fontSize: 12,
   },
   statisticsContainer: {
     flexDirection: 'row',

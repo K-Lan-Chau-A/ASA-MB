@@ -17,8 +17,9 @@ const PromotionScreen = () => {
   const [endTime, setEndTime] = useState('');
   const [type, setType] = useState<1 | 2>(1); // 1: amount, 2: percent
   const [value, setValue] = useState(''); // numeric string
-  const [allProducts, setAllProducts] = useState<Array<{ id: number; name: string; categoryName: string }>>([]);
-  const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
+  const [allProducts, setAllProducts] = useState<Array<{ id: number; productId: number; name: string; unitName: string; categoryName?: string }>>([]); // id = productUnitId
+  const [productCategoryById, setProductCategoryById] = useState<Record<number, string>>({});
+  const [selectedProductUnitIds, setSelectedProductUnitIds] = useState<number[]>([]);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [productSearch, setProductSearch] = useState('');
   const [categories, setCategories] = useState<Array<{ categoryId: number; categoryName: string }>>([]);
@@ -31,7 +32,7 @@ const PromotionScreen = () => {
   // no local UI state for select-all; derive from current selection
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [promotions, setPromotions] = useState<Array<{ promotionId: number; name: string; value: number; type: number; startDate: string; endDate: string; startTime?: string; endTime?: string }>>([]);
+  const [promotions, setPromotions] = useState<Array<{ promotionId: number; name: string; value: number; type: number; startDate: string; endDate: string; startTime?: string; endTime?: string; appliedProducts?: Array<{ productId: number; productName: string; unitName?: string }> }>>([]);
   const [productsModalOpen, setProductsModalOpen] = useState(false);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsOfPromotion, setProductsOfPromotion] = useState<string[]>([]);
@@ -40,6 +41,7 @@ const PromotionScreen = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [deletePromotionId, setDeletePromotionId] = useState<number | null>(null);
   const [menuVisible, setMenuVisible] = useState<number | null>(null);
+  const [expandedProductIds, setExpandedProductIds] = useState<number[]>([]);
 
   // Helpers: date/time input masks and validators
   const maskDateInput = useCallback((raw: string) => {
@@ -96,6 +98,15 @@ const PromotionScreen = () => {
         endDate: String(p.endDate ?? ''),
         startTime: p.startTime ? String(p.startTime) : undefined,
         endTime: p.endTime ? String(p.endTime) : undefined,
+        appliedProducts: Array.isArray(p.appliedProducts)
+          ? p.appliedProducts
+              .map((ap: any) => ({
+                productId: Number(ap.productId ?? ap.id ?? 0),
+                productName: String(ap.productName ?? ap.name ?? ''),
+                unitName: ap.unitName ? String(ap.unitName) : undefined,
+              }))
+              .filter((ap: any) => ap.productId > 0 && ap.productName)
+          : undefined,
       }));
       setPromotions(mapped);
     } catch {
@@ -119,13 +130,31 @@ const PromotionScreen = () => {
       setProductsModalTitle(`Sản phẩm áp dụng - ${promotionName}`);
       setProductsModalOpen(true);
       setProductsLoading(true);
+
+      // Prefer in-memory data from promotions list (includes unitName)
+      const p = promotions.find(pm => pm.promotionId === promotionId);
+      if (p && Array.isArray(p.appliedProducts) && p.appliedProducts.length > 0) {
+        const names = p.appliedProducts.map(ap => {
+          const unit = ap.unitName ? ` (Đơn vị: ${ap.unitName})` : '';
+          return `${ap.productName}${unit}`;
+        });
+        setProductsOfPromotion(names);
+        return;
+      }
+
+      // Fallback: fetch from API if not present
       const token = await getAuthToken();
       const res = await fetch(`${API_URL}/api/promotion-products?PromotionId=${promotionId}&page=1&pageSize=100`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       const data = await res.json().catch(() => ({}));
       const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-      const names = items.map((i: any) => String(i.productName ?? ''))
+      const names = items
+        .map((i: any) => {
+          const name = String(i.productName ?? '');
+          const unit = i.unitName ? ` (Đơn vị: ${String(i.unitName)})` : '';
+          return name ? `${name}${unit}` : '';
+        })
         .filter((n: string) => n.trim().length > 0);
       setProductsOfPromotion(names);
     } catch {
@@ -133,7 +162,7 @@ const PromotionScreen = () => {
     } finally {
       setProductsLoading(false);
     }
-  }, []);
+  }, [promotions]);
 
   const loadPromotionDetails = useCallback(async (promotionId: number) => {
     try {
@@ -143,8 +172,8 @@ const PromotionScreen = () => {
       });
       const data = await res.json().catch(() => ({}));
       const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-      const productIds = items.map((i: any) => Number(i.productId ?? i.id ?? 0)).filter(id => id > 0);
-      return productIds;
+      const unitIds = items.map((i: any) => Number(i.productUnitId ?? 0)).filter(id => id > 0);
+      return unitIds;
     } catch {
       return [];
     }
@@ -163,7 +192,7 @@ const PromotionScreen = () => {
       setEndTime(promotion.endTime || '');
       setType(promotion.type);
       setValue(promotion.value.toString());
-      setSelectedProductIds(productIds);
+      setSelectedProductUnitIds(productIds);
       setStatus(1); // Default to active
       
       setIsEditOpen(true);
@@ -193,19 +222,40 @@ const PromotionScreen = () => {
     }
   }, [loadPromotions]);
 
-  // Load product options
+  // Load product unit options (use productUnitId)
   useEffect(() => {
     const load = async () => {
       try {
         const shopId = (await getShopId()) ?? 0;
         const token = await getAuthToken();
         if (!shopId) return;
-        const url = `${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=200`;
+        const url = `${API_URL}/api/product-units?ShopId=${shopId}&page=1&pageSize=1000`;
         const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
         const data = await res.json().catch(() => ({}));
         const items: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-        const mapped = items.map((p: any, idx: number) => ({ id: Number(p.id ?? p.productId ?? idx + 1), name: String(p.productName ?? p.name ?? 'Sản phẩm'), categoryName: String(p.categoryName ?? 'Chưa phân loại') }));
-        setAllProducts(mapped);
+        const mappedBase = items.map((u: any) => ({
+          id: Number(u.productUnitId ?? 0),
+          productId: Number(u.productId ?? 0),
+          name: String(u.productName ?? 'Sản phẩm'),
+          unitName: String(u.unitName ?? ''),
+        })).filter(p => p.id > 0 && p.productId > 0 && p.name);
+        // Load product -> category map to enable category filtering for units
+        try {
+          const prodRes = await fetch(`${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=1000`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+          const prodData = await prodRes.json().catch(() => ({}));
+          const prodItems: any[] = Array.isArray(prodData?.items) ? prodData.items : Array.isArray(prodData) ? prodData : [];
+          const catMap: Record<number, string> = {};
+          prodItems.forEach((p: any) => {
+            const pid = Number(p.id ?? p.productId ?? 0);
+            const cname = String(p.categoryName ?? '');
+            if (pid > 0 && cname) catMap[pid] = cname;
+          });
+          setProductCategoryById(catMap);
+          const mapped = mappedBase.map(m => ({ ...m, categoryName: catMap[m.productId] }));
+          setAllProducts(mapped);
+        } catch {
+          setAllProducts(mappedBase);
+        }
         // Load categories
         try {
           const cRes = await fetch(`${API_URL}/api/categories?ShopId=${shopId}&page=1&pageSize=100`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
@@ -219,29 +269,65 @@ const PromotionScreen = () => {
     load();
   }, []);
 
-  const filteredProducts = useMemo(() => {
+  const groupedProducts = useMemo(() => {
     const term = productSearch.trim().toLowerCase();
-    return allProducts.filter(p => {
-      const matchSearch = term ? (p.name.toLowerCase().includes(term)) : true;
-      const matchCategory = selectedCategory === 'Tất cả' ? true : p.categoryName === selectedCategory;
+    const filtered = allProducts.filter(p => {
+      const matchSearch = term ? (p.name.toLowerCase().includes(term) || (p.unitName || '').toLowerCase().includes(term)) : true;
+      const matchCategory = selectedCategory === 'Tất cả' ? true : (p.categoryName === selectedCategory);
       return matchSearch && matchCategory;
     });
+    const byProduct = new Map<number, { productId: number; name: string; units: Array<{ id: number; unitName: string }> }>();
+    filtered.forEach(p => {
+      const existing = byProduct.get(p.productId);
+      if (!existing) {
+        byProduct.set(p.productId, { productId: p.productId, name: p.name, units: [{ id: p.id, unitName: p.unitName }] });
+      } else {
+        existing.units.push({ id: p.id, unitName: p.unitName });
+      }
+    });
+    // Sort by product name, then unitName
+    const groups = Array.from(byProduct.values()).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+    groups.forEach(g => g.units.sort((a, b) => (a.unitName || '').localeCompare(b.unitName || '', 'vi')));
+    return groups;
   }, [allProducts, productSearch, selectedCategory]);
 
-  const handleSelectAllInView = useCallback(() => {
-    const ids = filteredProducts.map(p => p.id);
-    const allSelected = ids.length > 0 && ids.every(id => selectedProductIds.includes(id));
+  const isGroupFullySelected = useCallback((grp: { units: Array<{ id: number }> }) => {
+    return grp.units.every(u => selectedProductUnitIds.includes(u.id));
+  }, [selectedProductUnitIds]);
+
+  const isGroupPartiallySelected = useCallback((grp: { units: Array<{ id: number }> }) => {
+    const any = grp.units.some(u => selectedProductUnitIds.includes(u.id));
+    return any && !isGroupFullySelected(grp);
+  }, [selectedProductUnitIds, isGroupFullySelected]);
+
+  const toggleGroupExpand = useCallback((productId: number) => {
+    setExpandedProductIds(prev => prev.includes(productId) ? prev.filter(id => id !== productId) : [...prev, productId]);
+  }, []);
+
+  const toggleGroupSelection = useCallback((grp: { units: Array<{ id: number }> }) => {
+    const ids = grp.units.map(u => u.id);
+    const allSelected = ids.every(id => selectedProductUnitIds.includes(id));
     if (allSelected) {
-      setSelectedProductIds(prev => prev.filter(id => !ids.includes(id)));
+      setSelectedProductUnitIds(prev => prev.filter(id => !ids.includes(id)));
     } else {
-      setSelectedProductIds(prev => Array.from(new Set([...prev, ...ids])));
+      setSelectedProductUnitIds(prev => Array.from(new Set([...prev, ...ids])));
     }
-  }, [filteredProducts, selectedProductIds]);
+  }, [selectedProductUnitIds]);
+
+  const handleSelectAllInView = useCallback(() => {
+    const ids = groupedProducts.flatMap(g => g.units.map(u => u.id));
+    const allSelected = ids.length > 0 && ids.every(id => selectedProductUnitIds.includes(id));
+    if (allSelected) {
+      setSelectedProductUnitIds(prev => prev.filter(id => !ids.includes(id)));
+    } else {
+      setSelectedProductUnitIds(prev => Array.from(new Set([...prev, ...ids])));
+    }
+  }, [groupedProducts, selectedProductUnitIds]);
 
   const allSelectedInView = useMemo(() => {
-    const ids = filteredProducts.map(p => p.id);
-    return ids.length > 0 && ids.every(id => selectedProductIds.includes(id));
-  }, [filteredProducts, selectedProductIds]);
+    const ids = groupedProducts.flatMap(g => g.units.map(u => u.id));
+    return ids.length > 0 && ids.every(id => selectedProductUnitIds.includes(id));
+  }, [groupedProducts, selectedProductUnitIds]);
 
   const validate = useCallback(() => {
     if (!name.trim()) {
@@ -285,12 +371,12 @@ const PromotionScreen = () => {
         return false;
       }
     }
-    if (selectedProductIds.length === 0) {
+    if (selectedProductUnitIds.length === 0) {
       Alert.alert('Lỗi', 'Vui lòng nhập danh sách sản phẩm (ID) áp dụng');
       return false;
     }
     return true;
-  }, [name, startDate, endDate, startTime, endTime, value, type, selectedProductIds, isValidDateDMY, isValidTime, toISODate]);
+  }, [name, startDate, endDate, startTime, endTime, value, type, selectedProductUnitIds, isValidDateDMY, isValidTime, toISODate]);
 
   const submit = useCallback(async () => {
     if (!validate()) return;
@@ -316,7 +402,7 @@ const PromotionScreen = () => {
         value: type === 2 ? Math.round(parseFloat(value) * 100) / 100 : Math.round(parseFloat(value)),
         type,
         status: typeof status === 'number' ? status : 1,
-        productIds: selectedProductIds,
+        productUnitIds: selectedProductUnitIds,
       } as any;
 
       const isEdit = editingPromotion !== null;
@@ -354,7 +440,7 @@ const PromotionScreen = () => {
       setEndTime('');
       setType(1);
       setValue('');
-      setSelectedProductIds([]);
+      setSelectedProductUnitIds([]);
       setEditingPromotion(null);
       setIsCreateOpen(false);
       setIsEditOpen(false);
@@ -364,7 +450,7 @@ const PromotionScreen = () => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [validate, name, startDate, endDate, startTime, endTime, type, value, selectedProductIds, editingPromotion]);
+  }, [validate, name, startDate, endDate, startTime, endTime, type, value, selectedProductUnitIds, editingPromotion]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top','bottom','left','right']}>
@@ -596,11 +682,11 @@ const PromotionScreen = () => {
               placeholder={type === 2 ? 'Nhập % (1-100)' : 'Nhập số tiền'}
             />
 
-            <Text style={styles.label}>Sản phẩm áp dụng <Text style={styles.required}>*</Text></Text>
+            <Text style={styles.label}>Sản phẩm/Đơn vị áp dụng <Text style={styles.required}>*</Text></Text>
             <TouchableOpacity style={styles.dropdownInput} onPress={() => setIsProductModalOpen(true)}>
               <Text style={styles.dropdownText}>
-                {selectedProductIds.length > 0
-                  ? `${selectedProductIds.length} sản phẩm đã chọn`
+                {selectedProductUnitIds.length > 0
+                  ? `${selectedProductUnitIds.length} mục đã chọn`
                   : 'Chọn sản phẩm'}
               </Text>
               <Icon name="chevron-down" size={20} color="#666" />
@@ -642,18 +728,37 @@ const PromotionScreen = () => {
                   </View>
 
                    <ScrollView style={{ maxHeight: 360 }}>
-                     {filteredProducts.map((p) => {
-                      const checked = selectedProductIds.includes(p.id);
-                      return (
-                        <TouchableOpacity key={p.id} style={styles.optionRow} onPress={() => {
-                          setSelectedProductIds((prev) => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]);
-                        }}>
-                          <Text style={styles.optionText}>{p.name}</Text>
-                          {checked ? <Icon name="checkbox-marked" size={20} color="#009DA5" /> : <Icon name="checkbox-blank-outline" size={20} color="#999" />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
+                     {groupedProducts.map((grp) => {
+                       const expanded = expandedProductIds.includes(grp.productId);
+                       const groupChecked = isGroupFullySelected(grp);
+                       const groupPartial = isGroupPartiallySelected(grp);
+                       const groupIcon = groupChecked ? 'checkbox-marked' : (groupPartial ? 'checkbox-intermediate' : 'checkbox-blank-outline');
+                       return (
+                         <View key={`grp-${grp.productId}`} style={{ paddingVertical: 6 }}>
+                           <View style={styles.groupHeader}>
+                             <TouchableOpacity style={styles.groupTitle} onPress={() => toggleGroupExpand(grp.productId)}>
+                               <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={18} color="#009DA5" />
+                               <Text style={styles.groupTitleText}>{grp.name}</Text>
+                             </TouchableOpacity>
+                             <TouchableOpacity onPress={() => toggleGroupSelection(grp)}>
+                               <Icon name={groupIcon} size={20} color={groupChecked || groupPartial ? '#009DA5' : '#999'} />
+                             </TouchableOpacity>
+                           </View>
+                           {expanded && grp.units.map((u) => {
+                             const checked = selectedProductUnitIds.includes(u.id);
+                             return (
+                               <TouchableOpacity key={u.id} style={styles.optionRow} onPress={() => {
+                                 setSelectedProductUnitIds((prev) => prev.includes(u.id) ? prev.filter(id => id !== u.id) : [...prev, u.id]);
+                               }}>
+                                 <Text style={styles.optionText}>{u.unitName}</Text>
+                                 {checked ? <Icon name="checkbox-marked" size={20} color="#009DA5" /> : <Icon name="checkbox-blank-outline" size={20} color="#999" />}
+                               </TouchableOpacity>
+                             );
+                           })}
+                         </View>
+                       );
+                     })}
+                   </ScrollView>
                   <TouchableOpacity style={styles.modalPrimaryBtn} onPress={() => setIsProductModalOpen(false)}>
                     <Text style={styles.modalPrimaryText}>Xong</Text>
                   </TouchableOpacity>
@@ -750,11 +855,11 @@ const PromotionScreen = () => {
               placeholder={type === 2 ? 'Nhập % (1-100)' : 'Nhập số tiền'}
             />
 
-            <Text style={styles.label}>Sản phẩm áp dụng <Text style={styles.required}>*</Text></Text>
+            <Text style={styles.label}>Sản phẩm/Đơn vị áp dụng <Text style={styles.required}>*</Text></Text>
             <TouchableOpacity style={styles.dropdownInput} onPress={() => setIsProductModalOpen(true)}>
               <Text style={styles.dropdownText}>
-                {selectedProductIds.length > 0
-                  ? `${selectedProductIds.length} sản phẩm đã chọn`
+                {selectedProductUnitIds.length > 0
+                  ? `${selectedProductUnitIds.length} mục đã chọn`
                   : 'Chọn sản phẩm'}
               </Text>
               <Icon name="chevron-down" size={20} color="#666" />
@@ -796,18 +901,25 @@ const PromotionScreen = () => {
                   </View>
 
                    <ScrollView style={{ maxHeight: 360 }}>
-                     {filteredProducts.map((p) => {
-                      const checked = selectedProductIds.includes(p.id);
-                      return (
-                        <TouchableOpacity key={p.id} style={styles.optionRow} onPress={() => {
-                          setSelectedProductIds((prev) => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]);
-                        }}>
-                          <Text style={styles.optionText}>{p.name}</Text>
-                          {checked ? <Icon name="checkbox-marked" size={20} color="#009DA5" /> : <Icon name="checkbox-blank-outline" size={20} color="#999" />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
+                     {groupedProducts.map((grp) => (
+                       <View key={`grp-${grp.productId}`} style={{ paddingVertical: 6 }}>
+                         <Text style={{ fontSize: 14, fontWeight: '700', color: '#000', paddingHorizontal: 4, marginBottom: 4 }}>
+                           {grp.name}
+                         </Text>
+                         {grp.units.map((u) => {
+                           const checked = selectedProductUnitIds.includes(u.id);
+                           return (
+                             <TouchableOpacity key={u.id} style={styles.optionRow} onPress={() => {
+                               setSelectedProductUnitIds((prev) => prev.includes(u.id) ? prev.filter(id => id !== u.id) : [...prev, u.id]);
+                             }}>
+                               <Text style={styles.optionText}>{u.unitName}</Text>
+                               {checked ? <Icon name="checkbox-marked" size={20} color="#009DA5" /> : <Icon name="checkbox-blank-outline" size={20} color="#999" />}
+                             </TouchableOpacity>
+                           );
+                         })}
+                       </View>
+                     ))}
+                   </ScrollView>
                   <TouchableOpacity style={styles.modalPrimaryBtn} onPress={() => setIsProductModalOpen(false)}>
                     <Text style={styles.modalPrimaryText}>Xong</Text>
                   </TouchableOpacity>
@@ -1011,6 +1123,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 999,
   },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+  },
+  groupTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  groupTitleText: { fontSize: 14, fontWeight: '700', color: '#000' },
 });
 
 export default PromotionScreen;

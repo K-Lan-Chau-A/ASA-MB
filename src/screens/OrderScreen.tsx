@@ -57,11 +57,12 @@ type AvailableProduct = {
 };
 
 // Memoized ProductItem component for better performance
-const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast }: { 
+const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast, canIncrease }: { 
   item: Product; 
   onUpdateQuantity: (id: string, change: number) => void;
   onUnitChange: (id: string, unitName: string) => void;
   isLast?: boolean;
+  canIncrease?: () => boolean;
 }) => {
   const [showUnitDropdown, setShowUnitDropdown] = useState(false);
   const [unitModalVisible, setUnitModalVisible] = useState(false);
@@ -74,6 +75,7 @@ const ProductItem = memo(({ item, onUpdateQuantity, onUnitChange, isLast }: {
   
   // Check if current quantity can be increased
   const canIncreaseQuantity = () => {
+    if (typeof canIncrease === 'function') return canIncrease();
     if (!item.availableQuantity) return true;
     const currentUnit = item.units.find(u => u.unitName === item.selectedUnit);
     if (!currentUnit) return true;
@@ -164,15 +166,18 @@ const AvailableProductItem = memo(({
   item, 
   currentQuantity, 
   onAddProduct, 
-  onUpdateQuantity 
+  onUpdateQuantity,
+  canIncrease,
 }: {
   item: Omit<Product, 'quantity'>;
   currentQuantity: number;
   onAddProduct: () => void;
   onUpdateQuantity: (id: string, change: number) => void;
+  canIncrease?: (unitName: string) => boolean;
 }) => {
   // Check if current quantity can be increased
   const canIncreaseQuantity = () => {
+    if (typeof canIncrease === 'function') return canIncrease(item.selectedUnit);
     if (!item.availableQuantity) return true;
     const currentUnit = item.units.find(u => u.unitName === item.selectedUnit);
     if (!currentUnit) return true;
@@ -244,7 +249,7 @@ export const clearGlobalOrderState = () => {
 // Function to fetch all products for preloading
 const fetchAllProducts = async (shopId: number): Promise<AvailableProduct[]> => {
   const token = await getAuthToken();
-  const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&page=1&pageSize=1000`, {
+  const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&Status=1&page=1&pageSize=1000`, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   const data = await res.json();
@@ -268,7 +273,7 @@ const fetchAllProducts = async (shopId: number): Promise<AvailableProduct[]> => 
     return {
       id: String(uniqueId),
       name: String(p.productName ?? p.name ?? 'Sản phẩm'),
-      price: Number(p.price ?? 0),
+      price: Number(baseUnit.price ?? p.promotionPrice ?? p.price ?? 0),
       barcode: p.barcode ? String(p.barcode) : undefined,
       imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
       units,
@@ -388,13 +393,28 @@ const OrderScreen = () => {
     setProducts(prevProducts => {
       const existingIndex = prevProducts.findIndex(p => p.id === product.id && p.selectedUnit === product.selectedUnit);
       
+      // Stock check across all units: compute committed base units
+      const findFactor = (units: any[], unitName: string) => (units.find(u => u.unitName === unitName)?.quantityInBaseUnit ?? 1);
+      const committedBase = prevProducts
+        .filter(p => p.id === product.id)
+        .reduce((sum, p) => sum + p.quantity * findFactor(p.units as any, p.selectedUnit), 0);
+      const addFactor = findFactor(product.units as any, product.selectedUnit);
+      const availableBase = Number((product as any).availableQuantity ?? 0);
+      if (availableBase && committedBase + addFactor > availableBase) {
+        Alert.alert('Không đủ hàng', 'Số lượng tồn kho không đủ cho đơn vị đã chọn.');
+        return prevProducts;
+      }
+
       if (existingIndex >= 0) {
         // Increase quantity if product with same unit already exists
         const updatedProducts = [...prevProducts];
-        updatedProducts[existingIndex] = {
-          ...updatedProducts[existingIndex],
-          quantity: updatedProducts[existingIndex].quantity + 1
-        };
+        const candidate = updatedProducts[existingIndex];
+        const unitFactor = findFactor(candidate.units as any, candidate.selectedUnit);
+        if (availableBase && committedBase + unitFactor > availableBase) {
+          Alert.alert('Không đủ hàng', 'Số lượng tồn kho không đủ cho đơn vị đã chọn.');
+          return prevProducts;
+        }
+        updatedProducts[existingIndex] = { ...candidate, quantity: candidate.quantity + 1 };
         console.log('📱 Updated quantity for:', product.name, product.selectedUnit);
         return updatedProducts;
       } else {
@@ -420,7 +440,7 @@ const OrderScreen = () => {
           const local = availableProducts.find(p => p.barcode === barcode);
           let candidate: any | null = local || null;
           if (!candidate) {
-            const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&Barcode=${encodeURIComponent(barcode)}&page=1&pageSize=1`, {
+            const res = await fetch(`${API_URL}/api/products?ShopId=${shopId}&Status=1&Barcode=${encodeURIComponent(barcode)}&page=1&pageSize=1`, {
               headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
             const data = await res.json().catch(() => ({}));
@@ -496,15 +516,32 @@ const OrderScreen = () => {
   }, [route.params?.newProduct, addProduct, navigation]);
 
   const updateQuantity = useCallback((id: string, change: number) => {
-    setProducts(prevProducts => 
-      prevProducts.map(product => {
-        if (product.id === id) {
-          const newQuantity = product.quantity + change;
-          return newQuantity > 0 ? { ...product, quantity: newQuantity } : null;
+    setProducts(prevProducts => {
+      if (change > 0) {
+        const target = prevProducts.find(p => p.id === id);
+        if (target) {
+          const findFactor = (units: any[], unitName: string) => (units.find(u => u.unitName === unitName)?.quantityInBaseUnit ?? 1);
+          const availableBase = Number(target.availableQuantity ?? 0);
+          const committedBase = prevProducts
+            .filter(p => p.id === id)
+            .reduce((sum, p) => sum + p.quantity * findFactor(p.units as any, p.selectedUnit), 0);
+          const unitFactor = findFactor(target.units as any, target.selectedUnit);
+          if (availableBase && committedBase + unitFactor > availableBase) {
+            Alert.alert('Không đủ hàng', 'Số lượng tồn kho không đủ cho đơn vị đã chọn.');
+            return prevProducts;
+          }
         }
-        return product;
-      }).filter(Boolean) as Product[]
-    );
+      }
+      return prevProducts
+        .map(product => {
+          if (product.id === id) {
+            const newQuantity = product.quantity + change;
+            return newQuantity > 0 ? { ...product, quantity: newQuantity } : null;
+          }
+          return product;
+        })
+        .filter(Boolean) as Product[];
+    });
   }, []);
 
   const handleUnitChange = useCallback((id: string, unitName: string) => {
@@ -645,14 +682,27 @@ const OrderScreen = () => {
     ).length;
   }, [searchText, allProducts, isLoadingProducts]);
 
-  const renderProduct = useCallback(({ item, index }: { item: Product; index: number }) => (
-    <ProductItem 
-      item={item} 
-      onUpdateQuantity={updateQuantity} 
-      onUnitChange={handleUnitChange}
-      isLast={index === products.length - 1}
-    />
-  ), [updateQuantity, handleUnitChange, products.length]);
+  const renderProduct = useCallback(({ item, index }: { item: Product; index: number }) => {
+    const findFactor = (units: any[], unitName: string) => (units.find(u => u.unitName === unitName)?.quantityInBaseUnit ?? 1);
+    const canIncrease = () => {
+      const availableBase = Number(item.availableQuantity ?? 0);
+      if (!availableBase) return true;
+      const committedBase = products
+        .filter(p => p.id === item.id)
+        .reduce((sum, p) => sum + p.quantity * findFactor(p.units as any, p.selectedUnit), 0);
+      const unitFactor = findFactor(item.units as any, item.selectedUnit);
+      return committedBase + unitFactor <= availableBase;
+    };
+    return (
+      <ProductItem 
+        item={item} 
+        onUpdateQuantity={updateQuantity} 
+        onUnitChange={handleUnitChange}
+        isLast={index === products.length - 1}
+        canIncrease={canIncrease}
+      />
+    );
+  }, [updateQuantity, handleUnitChange, products]);
 
   const getItemLayout = useCallback((data: any, index: number) => ({
     length: 82, // Height of productItem (66px + 16px margin)
@@ -694,6 +744,16 @@ const OrderScreen = () => {
       };
       addProduct(productToAdd);
     };
+    const findFactor = (units: any[], unitName: string) => (units.find(u => u.unitName === unitName)?.quantityInBaseUnit ?? 1);
+    const canIncrease = (unitName: string) => {
+      const availableBase = Number(item.availableQuantity ?? 0);
+      if (!availableBase) return true;
+      const committedBase = products
+        .filter(p => p.id === item.id)
+        .reduce((sum, p) => sum + p.quantity * findFactor(p.units as any, p.selectedUnit), 0);
+      const unitFactor = findFactor(item.units as any, unitName);
+      return committedBase + unitFactor <= availableBase;
+    };
     
     return (
       <AvailableProductItem
@@ -701,9 +761,10 @@ const OrderScreen = () => {
         currentQuantity={currentQuantity}
         onAddProduct={handleAddProduct}
         onUpdateQuantity={updateQuantity}
+        canIncrease={canIncrease}
       />
     );
-  }, [productQuantities, addProduct, updateQuantity]);
+  }, [productQuantities, addProduct, updateQuantity, products]);
 
 
 

@@ -55,7 +55,20 @@ const MoreScreen = () => {
         Alert.alert('Lỗi', msg);
         return;
       }
-      Alert.alert('Thành công', 'Đã đóng ca.');
+      const closedShiftId = Number(data?.shiftId ?? (await getShiftId()) ?? 0);
+      Alert.alert(
+        'Thành công',
+        'Đã đóng ca.',
+        [
+          { text: 'Để sau', style: 'cancel', onPress: () => setCloseModalVisible(false) },
+          { text: 'Xem báo cáo chốt ca', onPress: () => {
+              setCloseModalVisible(false);
+              // @ts-ignore - name matches RootStackParamList in app routing
+              navigation.navigate('CloseShiftReportScreen' as any, { shiftId: closedShiftId });
+            }
+          },
+        ]
+      );
       // Clear shiftId so app requires opening a new shift next time
       try { await clearShiftId(); console.log('[CloseShift] cleared local shiftId'); } catch {}
       setCloseModalVisible(false);

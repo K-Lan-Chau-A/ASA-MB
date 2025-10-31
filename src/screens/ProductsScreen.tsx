@@ -46,15 +46,16 @@ interface Product {
   quantity?: number;
   lastUpdated?: string;
   imageUrl?: string;
+  status?: number; // 1: active, 0: deactive
 }
 
 // Remote products will be loaded from API
 
 // Memoized ProductItem component
-const ProductItem = memo(({ item, onEdit, onDelete }: { 
+const ProductItem = memo(({ item, onEdit, onToggleActive }: { 
   item: Product; 
   onEdit: (product: Product) => void;
-  onDelete: (product: Product) => void;
+  onToggleActive: (product: Product) => void;
 }) => {
   const [showActions, setShowActions] = useState(false);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number; width: number; height: number }>({ x: 0, y: 0, width: 0, height: 0 });
@@ -71,7 +72,7 @@ const ProductItem = memo(({ item, onEdit, onDelete }: {
   const stockStatus = getStockStatus(item.quantity);
 
   return (
-    <View style={styles.productItem}>
+    <View style={[styles.productItem, item.status === 0 && { opacity: 0.6 }]}>
     <View style={styles.productImage}>
       {item.imageUrl ? (
         <Image source={{ uri: item.imageUrl }} style={styles.productThumb} resizeMode="cover" />
@@ -82,6 +83,9 @@ const ProductItem = memo(({ item, onEdit, onDelete }: {
       
       <View style={styles.productInfo}>
         <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+        {item.status === 0 && (
+          <Text style={styles.deactiveBadge}>Đã ngưng bán</Text>
+        )}
         <Text style={styles.productBarcode}>Mã: {item.barcode || 'Chưa có'}</Text>
         <Text style={styles.productCategory}>{item.categoryName || 'Chưa phân loại'}</Text>
         
@@ -139,12 +143,21 @@ const ProductItem = memo(({ item, onEdit, onDelete }: {
                     <TouchableOpacity 
                       style={styles.actionItem}
                       onPress={() => {
-                        onDelete(item);
+                        onToggleActive(item);
                         setShowActions(false);
                       }}
                     >
-                      <Icon name="delete" size={16} color="#FF6B6B" />
-                      <Text style={[styles.actionText, { color: '#FF6B6B' }]}>Xóa</Text>
+                      {item.status === 0 ? (
+                        <>
+                          <Icon name="check-circle" size={16} color="#2E7D32" />
+                          <Text style={[styles.actionText, { color: '#2E7D32' }]}>Kích hoạt</Text>
+                        </>
+                      ) : (
+                        <>
+                          <Icon name="block-helper" size={16} color="#FF6B6B" />
+                          <Text style={[styles.actionText, { color: '#FF6B6B' }]}>Ngưng bán</Text>
+                        </>
+                      )}
                     </TouchableOpacity>
                   </View>
                 </TouchableWithoutFeedback>
@@ -330,6 +343,7 @@ const ProductsScreen = () => {
       imageUrl: p.imageUrl ? String(p.imageUrl) : (p.productImageURL ? String(p.productImageURL) : undefined),
       units: [{ unitName: 'Cái', price: Number(p.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true }],
       selectedUnit: 'Cái',
+      status: typeof p.status === 'number' ? p.status : (typeof p.active === 'boolean' ? (p.active ? 1 : 0) : 1),
     }));
 
     setProducts(prev => {
@@ -393,6 +407,7 @@ const ProductsScreen = () => {
           imageUrl: prodItem.imageUrl ? String(prodItem.imageUrl) : (prodItem.productImageURL ? String(prodItem.productImageURL) : undefined),
           units: [{ unitName: 'Cái', price: Number(prodItem.price ?? 0), quantityInBaseUnit: 1, isBaseUnit: true }],
           selectedUnit: 'Cái',
+          status: typeof prodItem.status === 'number' ? prodItem.status : (typeof prodItem.active === 'boolean' ? (prodItem.active ? 1 : 0) : 1),
         }));
         all = [...all, ...chunk];
         const totalPages: number = Number(data?.totalPages ?? data?.data?.totalPages ?? 0) || 0;
@@ -469,20 +484,49 @@ const ProductsScreen = () => {
     navigation.navigate('AddProduct', { product: product });
   }, [navigation]);
 
-  const handleDeleteProduct = useCallback((product: Product) => {
+  const handleToggleActive = useCallback((product: Product) => {
+    const isDeactive = product.status === 0;
+    const title = isDeactive ? 'Kích hoạt sản phẩm' : 'Ngưng bán sản phẩm';
+    const message = isDeactive
+      ? `Kích hoạt lại sản phẩm "${product.name}"?`
+      : `Bạn có chắc chắn muốn ngưng bán sản phẩm "${product.name}"?`;
     Alert.alert(
-      'Xóa sản phẩm',
-      `Bạn có chắc chắn muốn xóa sản phẩm "${product.name}"?`,
+      title,
+      message,
       [
         { text: 'Hủy', style: 'cancel' },
-        { 
-          text: 'Xóa', 
-          style: 'destructive',
-          onPress: () => {
-            setProducts(prev => prev.filter(p => p.id !== product.id));
-            Alert.alert('Thành công', 'Sản phẩm đã được xóa');
+        {
+          text: isDeactive ? 'Kích hoạt' : 'Ngưng bán',
+          style: isDeactive ? 'default' : 'destructive',
+          onPress: async () => {
+            try {
+              const shopId = (await getShopId()) ?? 0;
+              const token = await getAuthToken();
+              const idNum = encodeURIComponent(product.id);
+              if (product.status === 1) {
+                // Deactivate via DELETE /api/products/{id}?shopid=
+                const res = await fetch(`${API_URL}/api/products/${idNum}?shopid=${shopId}` , {
+                  method: 'DELETE',
+                  headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+                });
+                if (!res.ok) throw new Error('Deactive failed');
+                setProducts(prev => prev.map(p => p.id === product.id ? { ...p, status: 0 } : p));
+                Alert.alert('Thành công', 'Sản phẩm đã được ngưng bán');
+              } else {
+                // Activate via PUT /api/products/{id}/status?shopid=
+                const res = await fetch(`${API_URL}/api/products/${idNum}/status?shopid=${shopId}`, {
+                  method: 'PUT',
+                  headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+                });
+                if (!res.ok) throw new Error('Activate failed');
+                setProducts(prev => prev.map(p => p.id === product.id ? { ...p, status: 1 } : p));
+                Alert.alert('Thành công', 'Sản phẩm đã được kích hoạt');
+              }
+            } catch (e) {
+              Alert.alert('Lỗi', 'Không thể cập nhật trạng thái sản phẩm');
+            }
           }
-        },
+        }
       ]
     );
   }, []);
@@ -491,9 +535,9 @@ const ProductsScreen = () => {
     <ProductItem 
       item={item} 
       onEdit={handleEditProduct}
-      onDelete={handleDeleteProduct}
+      onToggleActive={handleToggleActive}
     />
-  ), [handleEditProduct, handleDeleteProduct]);
+  ), [handleEditProduct, handleToggleActive]);
 
   const renderCategory = useCallback(({ item }: { item: string }) => (
     <TouchableOpacity
@@ -769,6 +813,12 @@ const styles = StyleSheet.create({
     color: '#000',
     fontWeight: 'bold',
     marginBottom: 4,
+  },
+  deactiveBadge: {
+    fontSize: 12,
+    color: '#E53935',
+    fontWeight: '700',
+    marginBottom: 6,
   },
   productBarcode: {
     fontSize: 12,
