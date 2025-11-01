@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">ASA</string>
+    <string moduleConfig="true" name="CodePushDeploymentKey">r2n8QECfTeb5hZed0IsEzsu4Kr9C7X9cZGw</string>
+    <string moduleConfig="true" name="CodePushServerUrl">https://codepush.appsonair.com</string>
+    <string name="appCenterAnalytics_whenToEnableAnalytics">ALWAYS_SEND</string>
+    <string name="appCenterCrashes_whenToSendCrashes">ALWAYS_SEND</string>
+  
 </resources>

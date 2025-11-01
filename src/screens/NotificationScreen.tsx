@@ -24,18 +24,22 @@ type RenderNotificationProps = {
   isRead?: boolean;
 };
 
-const NotificationItem = ({ icon, color, title, description, time, onPress, isRead }: RenderNotificationProps) => (
-  <TouchableOpacity style={styles.notificationItem} onPress={onPress}>
-    <View style={[styles.iconContainer, { backgroundColor: color }]}>
-      <Icon name={icon} size={24} color="#FFFFFF" />
-    </View>
-    <View style={styles.notificationContent}>
-      <Text style={[styles.notificationTitle, !isRead ? styles.unreadText : undefined]}>{title}</Text>
-      <Text style={[styles.notificationDescription, !isRead ? styles.unreadText : undefined]}>{description}</Text>
-      <Text style={styles.notificationTime}>{time}</Text>
-    </View>
-  </TouchableOpacity>
-);
+const NotificationItem = ({ icon, color, title, description, time, onPress, isRead }: RenderNotificationProps) => {
+  // Fallback icon nếu icon name không hợp lệ
+  const safeIcon = icon || 'bell';
+  return (
+    <TouchableOpacity style={styles.notificationItem} onPress={onPress}>
+      <View style={[styles.iconContainer, { backgroundColor: color }]}>
+        <Icon name={safeIcon} size={24} color="#FFFFFF" />
+      </View>
+      <View style={styles.notificationContent}>
+        <Text style={[styles.notificationTitle, !isRead ? styles.unreadText : undefined]}>{title}</Text>
+        <Text style={[styles.notificationDescription, !isRead ? styles.unreadText : undefined]}>{description}</Text>
+        <Text style={styles.notificationTime}>{time}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+};
 
 const NotificationScreen = () => {
   const navigation = useNavigation();
@@ -63,15 +67,21 @@ const NotificationScreen = () => {
   }, []);
 
   const mapTypeToIconAndColor = useCallback((type: NotificationDTO['type']): { icon: string; color: string } => {
-    switch (type) {
-      case 1: // Cảnh báo
-        return { icon: 'alert-outline', color: '#F44336' };
-      case 2: // Ưu đãi
-        return { icon: 'sale-outline', color: '#9C27B0' };
-      case 3: // Gợi ý
-        return { icon: 'lightbulb-on-outline', color: '#FFC107' };
-      case 4: // Thành công
-        return { icon: 'check-circle-outline', color: '#4CAF50' };
+    // Log type để debug
+    try {
+      console.log('🔔 mapTypeToIconAndColor - type:', type, typeof type);
+    } catch {}
+    
+    const typeNum = Number(type);
+    switch (typeNum) {
+      case 1: // Cảnh báo - Alert
+        return { icon: 'alert', color: '#F44336' };
+      case 2: // Ưu đãi - Promotion/Sale
+        return { icon: 'ticket-percent', color: '#9C27B0' };
+      case 3: // Gợi ý - Suggestion
+        return { icon: 'lightbulb-outline', color: '#FFC107' };
+      case 4: // Thành công - Success
+        return { icon: 'check-circle', color: '#4CAF50' };
       case 0: // Default
       default:
         return { icon: 'bell-outline', color: '#2196F3' };
@@ -166,6 +176,16 @@ const NotificationScreen = () => {
 
   const renderItem = useCallback(({ item }: { item: NotificationDTO }) => {
     const map = mapTypeToIconAndColor(item.type);
+    // Debug logging
+    try {
+      console.log('🔔 Notification render:', { 
+        notificationId: item.notificationId, 
+        type: item.type, 
+        icon: map.icon, 
+        color: map.color,
+        title: item.title 
+      });
+    } catch {}
     return (
       <NotificationItem
         icon={map.icon}

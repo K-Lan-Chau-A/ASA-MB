@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { Alert } from 'react-native';
+import CodePush from 'react-native-code-push';
 import { fcmService } from './src/services/FCMService';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -174,4 +175,14 @@ function App() {
   );
 }
 
-export default App;
+// CodePush configuration - lấy deployment key từ strings.xml (Android) hoặc Info.plist (iOS)
+const codePushOptions = {
+  checkFrequency: CodePush.CheckFrequency.ON_APP_RESUME,
+  // Chỉ update khi app ở foreground, không tự động restart
+  installMode: CodePush.InstallMode.ON_NEXT_RESUME,
+  // Delay 5 giây sau khi resume app
+  minimumFetchInterval: 5,
+};
+
+// Export app được wrap với CodePush HOC
+export default CodePush(codePushOptions)(App);
