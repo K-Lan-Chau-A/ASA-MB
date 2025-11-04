@@ -249,9 +249,7 @@ const ConfirmOrderScreen = () => {
       isSendInvoice: Boolean(isSendInvoice),
       orderDetails,
       ...(selectedCustomerId ? { customerId: Number(selectedCustomerId) } : {}),
-      totalPrice: Number(originalTotal || 0),
-      totalDiscount: Number(appliedDiscount || 0),
-      finalTotal: Number((originalTotal - appliedDiscount) || 0),
+      // Không gửi bất kỳ tổng tiền nào; backend tự tính để tránh sai lệch
     };
     try {
       const url = `${API_URL}/api/orders/${orderId}`;
@@ -355,12 +353,7 @@ const ConfirmOrderScreen = () => {
         orderDetails,
         ...(selectedCustomerId ? { customerId: Number(selectedCustomerId) } : {}),
         ...(isSendInvoice ? { isSendInvoice: true } : {}),
-        // Totals naming alignment
-        totalPrice: Number(originalTotal || 0),
-        totalDiscount: Number(appliedDiscount || 0),
-        finalTotal: Number(finalTotal || 0),
-        // Backward-compat for backends using finalPrice
-        finalPrice: Number(finalTotal || 0),
+        // Do NOT send any totals; let server compute to avoid validation mismatch
       };
 
       try {
