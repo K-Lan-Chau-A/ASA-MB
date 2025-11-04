@@ -18,7 +18,7 @@ type DetailLine = {
   discountAmount?: number;
   finalPrice?: number;
 };
-type HeaderInfo = { code: string; buyer: string; time: string; total: number; methodText: string; voucherId?: number | null; discount?: number; note?: string };
+type HeaderInfo = { code: string; buyer: string; time: string; total: number; methodText: string; voucherId?: number | null; discount?: number; totalDiscount?: number; note?: string };
 
 const OrderDetailScreen = () => {
   const route = useRoute<RouteProp<RootStackParamList, 'OrderDetail'>>();
@@ -76,6 +76,7 @@ const OrderDetailScreen = () => {
       const m = methodFromCode(o?.paymentMethod ?? o?.paymentMethodCode);
       const voucherId = o?.voucherId != null ? Number(o.voucherId) : null;
       const discount = Number(o?.discount ?? 0) || undefined;
+      const totalDiscount = Number(o?.totalDiscount ?? 0) || undefined;
       const note = o?.note ? String(o.note) : undefined;
       // If customerId exists, fetch full name from customers API
       try {
@@ -90,7 +91,7 @@ const OrderDetailScreen = () => {
           if (c?.fullName) buyer = String(c.fullName);
         }
       } catch {}
-      setHeader({ code, buyer, time, total, methodText: m.text, voucherId, discount, note });
+      setHeader({ code, buyer, time, total, methodText: m.text, voucherId, discount, totalDiscount, note });
     } catch {
     } finally {
       setLoading(false);
@@ -204,32 +205,38 @@ const OrderDetailScreen = () => {
       ) : (
         <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
           <View style={styles.detailRow}>
-            <Icon name="account" size={18} color="#666" />
+            <Icon name="account" size={18} color="#009DA5" />
             <Text style={styles.detailText}>Khách: {String(header.buyer || 'Khách lẻ')}</Text>
           </View>
           <View style={styles.detailRow}>
-            <Icon name="clock-outline" size={18} color="#666" />
+            <Icon name="clock-outline" size={18} color="#FF9800" />
             <Text style={styles.detailText}>{String(header.time || '')}</Text>
           </View>
           <View style={styles.detailRow}>
-            <Icon name="credit-card" size={18} color="#666" />
+            <Icon name="credit-card" size={18} color="#2196F3" />
             <Text style={styles.detailText}>PTTT: {String(header.methodText || '')}</Text>
           </View>
           {!!header.voucherId && (
             <View style={styles.detailRow}>
-              <Icon name="ticket-percent" size={18} color="#666" />
+              <Icon name="ticket-percent" size={18} color="#FF9800" />
               <Text style={styles.detailText}>Voucher: {voucherCode ? String(voucherCode) : `#${header.voucherId}`}</Text>
             </View>
           )}
           {typeof header.discount === 'number' && header.discount > 0 && (
             <View style={styles.detailRow}>
-              <Icon name="sale" size={18} color="#666" />
+              <Icon name="sale" size={18} color="#FF5722" />
               <Text style={styles.detailText}>Giảm giá: {Number(header.discount).toLocaleString('vi-VN')}%</Text>
+            </View>
+          )}
+          {typeof header.totalDiscount === 'number' && header.totalDiscount > 0 && (
+            <View style={styles.detailRow}>
+              <Icon name="tag" size={18} color="#4CAF50" />
+              <Text style={styles.detailText}>Tổng giảm giá: -{Number(header.totalDiscount).toLocaleString('vi-VN')}₫</Text>
             </View>
           )}
           {!!header.note && (
             <View style={styles.detailRow}>
-              <Icon name="note-text" size={18} color="#666" />
+              <Icon name="note-text" size={18} color="#9E9E9E" />
               <Text style={styles.detailText}>Ghi chú: {String(header.note)}</Text>
             </View>
           )}

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -58,7 +58,6 @@ const ConfirmOrderScreen = () => {
   const [promoCode, setPromoCode] = useState('');
   const [discountPercentage, setDiscountPercentage] = useState('');
   const [discountReason, setDiscountReason] = useState('');
-  const [appliedDiscount, setAppliedDiscount] = useState(0);
   
   // Payment method state
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>('cash');
@@ -153,7 +152,28 @@ const ConfirmOrderScreen = () => {
     return Math.min((originalTotal * percentage) / 100, originalTotal);
   }, [discountPercentage, originalTotal]);
 
-  const finalTotal = originalTotal - appliedDiscount;
+  // Calculate voucher discount
+  const calculateVoucherDiscount = useCallback(() => {
+    if (!selectedVoucherId) return 0;
+    const v = vouchers.find(v => v.voucherId === selectedVoucherId);
+    if (!v) return 0;
+    if (v.type === 2) {
+      const pct = Number(v.value || 0);
+      return Math.min((originalTotal * pct) / 100, originalTotal);
+    } else {
+      const amt = Number(v.value || 0);
+      return Math.min(amt, originalTotal);
+    }
+  }, [selectedVoucherId, vouchers, originalTotal]);
+
+  // Calculate total discount from both sources
+  const totalDiscount = useMemo(() => {
+    const voucherDisc = calculateVoucherDiscount();
+    const customDisc = calculateDiscount();
+    return voucherDisc + customDisc;
+  }, [calculateVoucherDiscount, calculateDiscount]);
+
+  const finalTotal = originalTotal - totalDiscount;
 
   // Cash payment denominations
   const denominations = [10000, 20000, 50000, 100000, 200000, 500000];
@@ -227,17 +247,27 @@ const ConfirmOrderScreen = () => {
     // Rebuild orderDetails from current products just like submitOrder
     const orderDetails = await Promise.all(products.map(async (p) => {
       const productUnitId = await resolveProductUnitId(shopId, p.id, p.selectedUnit, token);
+      const unitPrice = resolveProductUnitPrice(p);
       return {
         quantity: Number(p.quantity ?? 0),
         productUnitId: Number(productUnitId ?? 0),
         productId: Number(p.id),
+        price: Number(unitPrice),
+        discountValue: 0,
       };
     }));
     const customDiscountPercent = (() => {
       const pct = parseFloat(discountPercentage || '');
-      if (!selectedVoucherId && !isNaN(pct) && pct > 0 && pct <= 100) return Math.round(pct);
+      if (!isNaN(pct) && pct > 0 && pct <= 100) return Math.round(pct);
       return undefined;
     })();
+    // Precompute simple totals similar to create flow
+    const computedTotalPrice = orderDetails.reduce((sum: number, d: any) => sum + Number(d.price || 0) * Number(d.quantity || 0), 0);
+    const computedItemDiscount = orderDetails.reduce((sum: number, d: any) => sum + Number(d.discountValue || 0) * Number(d.quantity || 0), 0);
+    const percentDiscount = Number(customDiscountPercent || 0);
+    const computedPercentDiscount = Math.round((computedTotalPrice * percentDiscount) / 100);
+    const computedFinalTotal = Math.max(0, computedTotalPrice - computedItemDiscount - computedPercentDiscount);
+
     const body: any = {
       paymentMethod: paymentMethodCode ?? mapPaymentMethodToCode(selectedPaymentMethod),
       status,
@@ -245,11 +275,13 @@ const ConfirmOrderScreen = () => {
       shopId,
       ...(selectedVoucherId ? { voucherId: selectedVoucherId } : {}),
       ...(customDiscountPercent ? { discount: customDiscountPercent } : {}),
-      note: (promoCode || discountReason) ? [promoCode ? `Mã: ${promoCode}` : '', discountReason ? `Lý do: ${discountReason}` : ''].filter(Boolean).join(' | ') : null,
+      ...(discountReason ? { note: String(discountReason).trim() } : {}),
       isSendInvoice: Boolean(isSendInvoice),
       orderDetails,
       ...(selectedCustomerId ? { customerId: Number(selectedCustomerId) } : {}),
-      // Không gửi bất kỳ tổng tiền nào; backend tự tính để tránh sai lệch
+      totalPrice: computedTotalPrice,
+      totalDiscount: computedItemDiscount + computedPercentDiscount,
+      finalTotal: computedFinalTotal,
     };
     try {
       const url = `${API_URL}/api/orders/${orderId}`;
@@ -292,16 +324,28 @@ const ConfirmOrderScreen = () => {
         return name.toLowerCase() === String(selectedUnitName).trim().toLowerCase();
       });
       if (found) {
-        const id = Number(found?.id ?? found?.productUnitId ?? 0);
+        const id = Number(found?.productUnitId ?? found?.id ?? 0);
         if (Number.isFinite(id) && id > 0) return id;
       }
       // Fallback to base unit (conversionFactor === 1)
       const base = items.find((u: any) => Number(u.conversionFactor ?? 0) === 1) || items[0];
-      const baseId = Number(base?.id ?? base?.productUnitId ?? 0);
+      const baseId = Number(base?.productUnitId ?? base?.id ?? 0);
       return Number.isFinite(baseId) && baseId > 0 ? baseId : 0;
     } catch {
       return 0;
     }
+  };
+
+  // Resolve unit price for the selected unit; fallback to product.price
+  const resolveProductUnitPrice = (product: any): number => {
+    try {
+      const selectedName = String(product?.selectedUnit ?? '').trim().toLowerCase();
+      const found = (product?.units as any[])?.find((u: any) => String(u?.unitName ?? '').trim().toLowerCase() === selectedName);
+      const unitPrice = Number((found as any)?.price ?? 0);
+      if (Number.isFinite(unitPrice) && unitPrice > 0) return unitPrice;
+    } catch {}
+    const base = Number((product as any)?.price ?? 0);
+    return Number.isFinite(base) ? base : 0;
   };
 
   const submitOrder = async () => {
@@ -318,26 +362,37 @@ const ConfirmOrderScreen = () => {
         try {
           console.log('[OrderDetail] productId', p.id, 'selectedUnit', p.selectedUnit, 'productUnitId', productUnitId, 'quantity', p.quantity);
         } catch {}
+        const unitPrice = resolveProductUnitPrice(p);
         return {
           quantity: Number(p.quantity ?? 0),
           productUnitId: Number(productUnitId ?? 0),
           productId: Number(p.id),
+          price: Number(unitPrice),
+          discountValue: 0,
         };
       }));
 
-      // Validate productUnitId resolution
-      if (orderDetails.some(d => !d.productUnitId || d.productUnitId === 0)) {
-        Alert.alert('Lỗi', 'Không xác định được đơn vị bán cho một số sản phẩm (không có đơn vị khả dụng).');
+      // Validate orderDetails
+      if (orderDetails.some(d => !d.productUnitId || d.productUnitId === 0 || !d.price || d.price <= 0 || !d.quantity || d.quantity <= 0)) {
+        console.log('[CreateOrder][VALIDATION] bad orderDetails', orderDetails);
+        Alert.alert('Lỗi', 'Thiếu đơn vị bán/giá/số lượng hợp lệ cho một số sản phẩm.');
         setIsSubmitting(false);
         return;
       }
 
-      // Build discount as PERCENT when custom discount is applied and no voucher is selected
+      // Build discount as PERCENT - can be used together with voucherId
       const customDiscountPercent = (() => {
         const pct = parseFloat(discountPercentage || '');
-        if (!selectedVoucherId && !isNaN(pct) && pct > 0 && pct <= 100) return Math.round(pct);
+        if (!isNaN(pct) && pct > 0 && pct <= 100) return Math.round(pct);
         return undefined;
       })();
+
+      // Precompute simple totals to help backend validate amount
+      const computedTotalPrice = orderDetails.reduce((sum: number, d: any) => sum + Number(d.price || 0) * Number(d.quantity || 0), 0);
+      const computedItemDiscount = orderDetails.reduce((sum: number, d: any) => sum + Number(d.discountValue || 0) * Number(d.quantity || 0), 0);
+      const percentDiscount = Number(customDiscountPercent || 0);
+      const computedPercentDiscount = Math.round((computedTotalPrice * percentDiscount) / 100);
+      const computedFinalTotal = Math.max(0, computedTotalPrice - computedItemDiscount - computedPercentDiscount);
 
       const payload: any = {
         paymentMethod: mapPaymentMethodToCode(selectedPaymentMethod),
@@ -349,16 +404,19 @@ const ConfirmOrderScreen = () => {
         // Send voucherId OR percentage discount (0-100) per server contract
         ...(selectedVoucherId ? { voucherId: selectedVoucherId } : {}),
         ...(customDiscountPercent ? { discount: customDiscountPercent } : {}),
-        note: (promoCode || discountReason) ? [promoCode ? `Mã: ${promoCode}` : '', discountReason ? `Lý do: ${discountReason}` : ''].filter(Boolean).join(' | ') : null,
+        ...(discountReason ? { note: String(discountReason).trim() } : {}),
         orderDetails,
         ...(selectedCustomerId ? { customerId: Number(selectedCustomerId) } : {}),
         ...(isSendInvoice ? { isSendInvoice: true } : {}),
-        // Do NOT send any totals; let server compute to avoid validation mismatch
+        // Provide computed totals to avoid zero-amount orders on some backends
+        totalPrice: computedTotalPrice,
+        totalDiscount: computedItemDiscount + computedPercentDiscount,
+        finalTotal: computedFinalTotal,
       };
 
       try {
         console.log('[CreateOrder] payload.shopId', payload.shopId, 'paymentMethod', payload.paymentMethod, 'status', payload.status);
-        console.log('[CreateOrder] payload.orderDetails', payload.orderDetails);
+        console.log('[CreateOrder] payload.orderDetails', JSON.stringify(payload.orderDetails));
       } catch {}
 
       // Only include optional fields if provided
@@ -382,6 +440,7 @@ const ConfirmOrderScreen = () => {
           discount: payload.discount,
           voucherId: payload.voucherId ?? null,
           customerId: payload.customerId ?? null,
+          note: payload.note ?? null,
           detailsCount: Array.isArray(payload.orderDetails) ? payload.orderDetails.length : 0,
         });
       } catch {}
@@ -469,15 +528,7 @@ const ConfirmOrderScreen = () => {
     if (!v) return;
     setPromoCode(v.code);
     setSelectedVoucherId(Number(v.voucherId || 0) || null);
-    if (v.type === 2) {
-      const pct = Number(v.value || 0);
-      const discount = Math.min((originalTotal * pct) / 100, originalTotal);
-      setAppliedDiscount(discount);
-    } else {
-      const amt = Number(v.value || 0);
-      const discount = Math.min(amt, originalTotal);
-      setAppliedDiscount(discount);
-    }
+    // Discount is now calculated dynamically via totalDiscount
   };
 
   const handleApplyCustomDiscount = () => {
@@ -494,19 +545,26 @@ const ConfirmOrderScreen = () => {
     
     const discount = calculateDiscount();
     if (discount > 0) {
-      setAppliedDiscount(discount);
+      // Discount is now calculated dynamically via totalDiscount
       Alert.alert('Thành công', `Áp dụng giảm ${percentage}% thành công!`);
     } else {
       Alert.alert('Lỗi', 'Vui lòng nhập phần trăm giảm giá hợp lệ');
     }
   };
 
-  const handleRemoveDiscount = () => {
-    setAppliedDiscount(0);
+  const handleRemoveVoucher = () => {
     setPromoCode('');
+    setSelectedVoucherId(null);
+  };
+
+  const handleRemoveCustomDiscount = () => {
     setDiscountPercentage('');
     setDiscountReason('');
-    setSelectedVoucherId(null);
+  };
+
+  const handleRemoveDiscount = () => {
+    handleRemoveVoucher();
+    handleRemoveCustomDiscount();
   };
 
   const handlePayment = async () => {
@@ -657,7 +715,7 @@ const ConfirmOrderScreen = () => {
     navigation.navigate('InvoicePreview', {
       invoiceData: {
         ...(invoiceData as any),
-        discount: appliedDiscount,
+        discount: totalDiscount,
         customerName: customerInfo?.fullName,
         customerPhone: customerInfo?.phone,
         customerEmail: customerInfo?.email,
@@ -936,7 +994,7 @@ const ConfirmOrderScreen = () => {
               </View>
               <TextInput
                 style={styles.reasonInput}
-                placeholder="Lý do giảm giá"
+                placeholder="Ghi chú"
                 value={discountReason}
                 onChangeText={setDiscountReason}
                 placeholderTextColor="#999"
@@ -950,23 +1008,51 @@ const ConfirmOrderScreen = () => {
           </View>
 
           {/* Applied Discount */}
-          {appliedDiscount > 0 && (
+          {totalDiscount > 0 && (
             <View style={styles.appliedDiscountContainer}>
               <View style={styles.appliedDiscountHeader}>
                 <Icon name="check-circle" size={20} color="#4CAF50" />
                 <Text style={styles.appliedDiscountTitle}>Giảm giá đã áp dụng</Text>
               </View>
+              {selectedVoucherId && (
+                <View style={styles.appliedDiscountRow}>
+                  <Text style={styles.appliedDiscountLabel}>Mã khuyến mãi ({promoCode}):</Text>
+                  <Text style={styles.appliedDiscountAmount}>-{calculateVoucherDiscount().toLocaleString('vi-VN')}đ</Text>
+                </View>
+              )}
+              {discountPercentage && (
+                <View style={styles.appliedDiscountRow}>
+                  <Text style={styles.appliedDiscountLabel}>Giảm giá {discountPercentage}%:</Text>
+                  <Text style={styles.appliedDiscountAmount}>-{calculateDiscount().toLocaleString('vi-VN')}đ</Text>
+                </View>
+              )}
               <View style={styles.appliedDiscountRow}>
-                <Text style={styles.appliedDiscountLabel}>Số tiền giảm:</Text>
-                <Text style={styles.appliedDiscountAmount}>-{appliedDiscount.toLocaleString('vi-VN')}đ</Text>
+                <Text style={styles.appliedDiscountLabel}>Tổng giảm giá:</Text>
+                <Text style={styles.appliedDiscountAmount}>-{totalDiscount.toLocaleString('vi-VN')}đ</Text>
               </View>
               {discountReason && (
-                <Text style={styles.discountReasonText}>Lý do: {discountReason}</Text>
+                <Text style={styles.discountReasonText}>Ghi chú: {discountReason}</Text>
               )}
-              <TouchableOpacity style={styles.removeDiscountButton} onPress={handleRemoveDiscount}>
-                <Icon name="close-circle" size={16} color="#FF6B6B" />
-                <Text style={styles.removeDiscountText}>Xóa giảm giá</Text>
-              </TouchableOpacity>
+              <View style={styles.removeDiscountButtons}>
+                {selectedVoucherId && (
+                  <TouchableOpacity style={styles.removeDiscountButton} onPress={handleRemoveVoucher}>
+                    <Icon name="close-circle" size={16} color="#FF6B6B" />
+                    <Text style={styles.removeDiscountText}>Xóa mã KM</Text>
+                  </TouchableOpacity>
+                )}
+                {discountPercentage && (
+                  <TouchableOpacity style={styles.removeDiscountButton} onPress={handleRemoveCustomDiscount}>
+                    <Icon name="close-circle" size={16} color="#FF6B6B" />
+                    <Text style={styles.removeDiscountText}>Xóa giảm %</Text>
+                  </TouchableOpacity>
+                )}
+                {(selectedVoucherId || discountPercentage) && (
+                  <TouchableOpacity style={styles.removeDiscountButton} onPress={handleRemoveDiscount}>
+                    <Icon name="close-circle" size={16} color="#FF6B6B" />
+                    <Text style={styles.removeDiscountText}>Xóa tất cả</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           )}
         </View>
@@ -1584,10 +1670,16 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginBottom: 12,
   },
+  removeDiscountButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 8,
+    justifyContent: 'flex-end',
+  },
   removeDiscountButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-end',
     paddingVertical: 4,
   },
   removeDiscountText: {
